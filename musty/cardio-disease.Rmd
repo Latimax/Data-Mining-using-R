@@ -1,0 +1,953 @@
+---
+title: "Cardio Disease"
+author: "Mustapha Shehu Muhammad(CST/19/COM/00332)"
+date: "2025-03-20"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+```
+
+## Understanding dataset
+age: The person's age in days
+sex: The person's sex (1 = women, 2 = male)
+height: person's height in cm
+weigth: person's weigth in kg
+ap_hi: Systolic blood pressure
+ap_lo: Diastolic blood pressure
+cholestrol: person cholestrol level(1: normal, 2: above normal, 3: well above normal)
+glucose: person's glucose level (1: normal, 2: above normal, 3: well above normal)
+smoke: whether patient smokes or not(0: NO and 1: YES)
+alcohol: Alcohol intake(0: NO and 1: YES)
+active: Physical activity(0: NO and 1: YES)
+cardio: Heart Diseases---Target Variable(0: NO and 1: YES)
+
+---
+
+## Load Data and Libraries
+
+**Load necessary libraries:**
+
+```{r}
+
+library(RWeka) # For J48 (C4.5 Implementation)
+library(C50) # For C5.0
+library(caret) # For cross-validation and performance evaluation
+
+```
+
+
+**Load the dataset:**
+
+```{r}
+data <- read.csv("data.csv")
+str(data)  # Check the structure
+
+```
+
+**Dataset Summary**
+
+```{r}
+summary(data)  # Basic summary
+
+```
+
+**Display First 6 Rows**
+
+```{r}
+
+#displays first 6 rows of the dataset
+
+head(data)
+
+```
+
+## Data Preparation
+
+**Change gender to 0 and 1**
+
+```{r}
+
+# Load dplyr
+library(dplyr)
+
+# Map values: 1 → 0, 2 → 1
+data$gender <- recode(data$gender, `1` = 0, `2` = 1)
+
+head(data)
+
+```
+
+**Check duplicate rows**
+```{r}
+# Check for duplicates based on all columns
+duplicate_row <- data[duplicated(data), ]
+
+# Print the results
+print(duplicate_row)
+
+```
+
+There's no duplicate
+
+**Handle missing values:**
+
+```{r}
+# Check total missing values in the dataset
+sum(is.na(data))
+
+# Check missing values per column
+colSums(is.na(data))
+
+
+```
+There are no missing values
+
+**Drop age_days and rename age_year to age (integer)**
+
+```{r}
+# Drop the 'age_days' column
+data <- data[, !(names(data) == "age_days")]
+
+# Rename 'age_year' to 'age'
+names(data)[names(data) == "age_year"] <- "age"
+
+# Ensure 'age' is an integer
+data$age <- as.integer(data$age)
+
+# Verify the changes
+head(data)
+
+
+```
+
+**Drop Id column**
+
+```{r}
+# Drop 'id' column
+data <- data[, !(names(data) == "id")]
+
+# Verify the changes
+head(data)
+
+
+```
+
+**Outliers Detection**
+
+```{r}
+library(ggplot2)
+library(gridExtra)  # For side-by-side plots
+
+# Create the two boxplots
+plot1 <- ggplot(data, aes(y = ap_hi)) + 
+  geom_boxplot() + 
+  ggtitle("Boxplot of ap_hi (1)") +
+  theme_minimal()
+
+plot2 <- ggplot(data, aes(y = ap_hi)) + 
+  geom_boxplot() + 
+  ggtitle("Boxplot of ap_hi (2)") +
+  theme_minimal()
+
+# Arrange side by side
+grid.arrange(plot1, plot2, ncol = 2)
+
+```
+
+clearly we can see that ouliers are present in dataset as such high value of blood-pressure is not possible
+
+** After looking for systolic and diastolic pressure we found that: **
+```{r}
+# Blood Pressure Categories Data
+bp_data <- data.frame(
+  Category = c("Normal", "Elevated", "High Blood Pressure (Hypertension) Stage 1", 
+               "High Blood Pressure (Hypertension) Stage 2", "Hypertensive Crisis (Consult Doctor Immediately)"),
+  Systolic = c("Less than 120", "120 - 129", "130 - 139", "140 or higher", "Higher than 180"),
+  Diastolic = c("Less than 80", "Less than 80", "80 - 89", "90 or higher", "Higher than 120")
+)
+
+print(bp_data)
+
+```
+
+
+**Treating Outliers**
+
+```{r}
+# Drop rows where systolic pressure (ap_hi) > 230 or diastolic pressure (ap_lo) > 150
+data <- data[!(data$ap_hi > 230 | data$ap_lo > 150), ]
+
+# Check the shape (rows and columns)
+dim(data)
+
+```
+Also we found that a blood pressure reading lower than 90 millimeters of mercury
+(mm Hg) for the top number (systolic) or 60 mm Hg for the bottom number
+(diastolic) is generally considered low blood pressure.
+
+```{r}
+
+# Drop rows where systolic pressure (ap_hi) < 70 or diastolic pressure (ap_lo) < 55
+data <- data[!(data$ap_hi < 70 | data$ap_lo < 55), ]
+
+# Check the shape (rows and columns)
+dim(data)
+
+```
+```{r}
+# Load necessary libraries
+library(ggplot2)
+
+# Create the boxplot
+ggplot(data, aes(x = factor(cardio), y = height, fill = factor(cardio))) +
+  geom_boxplot() +
+  scale_fill_manual(values = c("0" = "blue", "1" = "red")) +
+  theme_minimal() +
+  labs(x = "Cardio", y = "Height", fill = "Cardio") +
+  ggtitle("Height by Cardio")
+
+# Calculate IQR, upper limit, and lower limit
+Q1 <- quantile(data$height, 0.25, na.rm = TRUE)
+Q3 <- quantile(data$height, 0.75, na.rm = TRUE)
+IQR <- Q3 - Q1
+ul <- Q3 + 1.5 * IQR
+ll <- Q1 - 1.5 * IQR
+
+# Print the results
+cat("IQR:", IQR, "\n")
+cat("Upper limit:", ul, "\n")
+cat("Lower limit:", ll, "\n")
+
+
+```
+
+
+ outliers present
+ 
+ 
+```{r}
+# Drop rows where height is less than 120 cm
+data <- data[data$height >= 120, ]
+
+# Reset row indices (optional, if needed)
+rownames(data) <- NULL
+
+# Check the updated data
+dim(data)
+
+
+```
+
+```{r}
+# Load necessary libraries
+library(ggplot2)
+
+# Create the boxplot with blue and red colors
+ggplot(data, aes(x = factor(cardio), y = weight, fill = factor(cardio))) +
+  geom_boxplot() +
+  scale_fill_manual(values = c("0" = "blue", "1" = "red")) +
+  theme_minimal() +
+  labs(x = "Cardio", y = "Weight", fill = "Cardio") +
+  ggtitle("Weight by Cardio")
+
+# Calculate IQR, upper limit, and lower limit
+Q1 <- quantile(data$weight, 0.25, na.rm = TRUE)
+Q3 <- quantile(data$weight, 0.75, na.rm = TRUE)
+IQR <- Q3 - Q1
+ul <- Q3 + 1.5 * IQR
+ll <- Q1 - 1.5 * IQR
+
+# Print the results
+cat("IQR:", IQR, "\n")
+cat("Upper limit:", ul, "\n")
+cat("Lower limit:", ll, "\n")
+
+
+```
+
+Outlier detected
+
+```{r}
+# Drop rows where weight is greater than 180
+data <- data[data$weight <= 180, ]
+
+# Reset row indices (optional, if needed)
+rownames(data) <- NULL
+
+# Check the updated data
+dim(data)
+
+
+```
+
+```{r}
+# Drop rows where weight is less than 30
+data <- data[data$weight >= 30, ]
+
+# Reset row indices (optional, if needed)
+rownames(data) <- NULL
+
+# Check the updated data
+head(data)
+
+```
+
+
+
+
+## Exploratory Data Analysis (EDA)
+
+**Visualize feature distributions:**
+
+```{r, fig.height=16, fig.width=16}
+
+# Load ggplot2 library
+library(ggplot2)
+
+# Set plot layout to 2 plots per row
+gridExtra::grid.arrange(
+  grobs = lapply(names(data), function(col) {
+    ggplot(data, aes(x = .data[[col]], fill = as.factor(cardio))) +
+      geom_histogram(color = "red", bins = 30, alpha = 0.7) +
+      labs(title = col, fill = "cardio") +
+      theme_minimal()
+  }),
+  ncol = 2
+)
+
+
+```
+Key Insights:
+Blood pressure, cholesterol, and glucose levels seem to be the most telling
+indicators of cardiovascular disease in this dataset. Age and weight also show
+noticeable trends. Lifestyle factors don’t show a strong correlation visually,
+but could still play a role when combined with other features.
+
+**UNIVARIATE ANALYSIS**
+
+```{r}
+library(ggplot2)
+
+ggplot(data, aes(x = age, fill = as.factor(cardio))) +
+  geom_density(alpha = 0.5) +
+  scale_fill_manual(values = c("0" = "green", "1" = "red"), labels = c("NO", "YES")) +
+  labs(x = "Age", fill = "Cardio") +
+  theme_minimal()
+
+
+```
+
+```{r}
+library(dplyr)
+library(psych)
+
+# Group by 'cardio' and summarize 'age'
+data %>%
+  group_by(cardio) %>%
+  summarise(
+    count = n(),
+    mean = mean(age, na.rm = TRUE),
+    sd = sd(age, na.rm = TRUE),
+    min = min(age, na.rm = TRUE),
+    Q1 = quantile(age, 0.25, na.rm = TRUE),
+    median = median(age, na.rm = TRUE),
+    Q3 = quantile(age, 0.75, na.rm = TRUE),
+    max = max(age, na.rm = TRUE)
+  )
+
+
+```
+**Observation:**
+
+Person's suffering from heart related issue tend to have higher age than other
+ones. As we can see here that avg age of person having heart disease is
+54.43 and others have **51.21**
+As per the plot we can see that **pdf curve of person having heart disease is
+left skewed means person with lower age have less chance of having heart
+problems.
+
+
+
+```{r}
+
+library(ggplot2)
+
+# Create the plot
+ggplot(data, aes(x = weight, fill = factor(cardio))) +
+  geom_density(alpha = 0.5) +
+  scale_fill_manual(values = c("0" = "green", "1" = "red"), labels = c("NO", "YES")) +
+  labs(x = "Weight", y = "Density", fill = "Heart Disease") +
+  theme_minimal() +
+  theme(legend.position = "top")
+
+```
+```{r}
+library(dplyr)
+
+# Group by cardio and summarize weight
+data %>%
+  group_by(cardio) %>%
+  summarize(
+    count = n(),
+    mean = mean(weight, na.rm = TRUE),
+    std = sd(weight, na.rm = TRUE),
+    min = min(weight, na.rm = TRUE),
+    q1 = quantile(weight, 0.25, na.rm = TRUE),
+    median = median(weight, na.rm = TRUE),
+    q3 = quantile(weight, 0.75, na.rm = TRUE),
+    max = max(weight, na.rm = TRUE)
+  )
+
+
+
+```
+**Observation:**
+
+person having more weight have higher chance of having heart diseases. As we can
+see from the graphs and also from the statistical data that Avg. weight of
+person having heart problems(76.91) is more than those who don't have.
+
+
+```{r}
+library(ggplot2)
+
+ggplot(data, aes(x = height, fill = as.factor(cardio))) +
+  geom_density(alpha = 0.5) +
+  scale_fill_manual(values = c("0" = "green", "1" = "red"), labels = c("NO", "YES")) +
+  labs(x = "Height", fill = "Heart Disease") +
+  theme_minimal()
+
+
+```
+
+```{r}
+library(dplyr)
+
+# Group by 'cardio' and summarize 'height'
+data %>%
+  group_by(cardio) %>%
+  summarise(
+    count = n(),
+    mean = mean(height, na.rm = TRUE),
+    std = sd(height, na.rm = TRUE),
+    min = min(height, na.rm = TRUE),
+    q1 = quantile(height, 0.25, na.rm = TRUE),
+    median = median(height, na.rm = TRUE),
+    q3 = quantile(height, 0.75, na.rm = TRUE),
+    max = max(height, na.rm = TRUE)
+  )
+
+
+```
+
+**Observation:**
+
+Height is doesn't play any role in determining heart diseases. As we can see
+both the plot overlaps and avg height of person with heart problem and without
+heart problems is also same.
+
+**Blood pressure analysis**
+
+
+```{r}
+library(ggplot2)
+
+ggplot(data, aes(x = ap_hi, fill = as.factor(cardio))) +
+  geom_density(alpha = 0.5) +
+  scale_fill_manual(values = c("0" = "green", "1" = "red"), labels = c("NO", "YES")) +
+  labs(x = "Blood Pressure", fill = "Heart Disease") +
+  theme_minimal()
+
+
+```
+
+```{r}
+library(dplyr)
+
+data %>%
+  group_by(cardio) %>%
+  summarise(
+    count = n(),
+    mean = mean(ap_hi, na.rm = TRUE),
+    std = sd(ap_hi, na.rm = TRUE),
+    min = min(ap_hi, na.rm = TRUE),
+    q1 = quantile(ap_hi, 0.25, na.rm = TRUE),
+    median = median(ap_hi, na.rm = TRUE),
+    q3 = quantile(ap_hi, 0.75, na.rm = TRUE),
+    max = max(ap_hi, na.rm = TRUE)
+  )
+
+
+```
+```{r}
+library(ggplot2)
+
+ggplot(data, aes(x = ap_lo, fill = factor(cardio))) +
+  geom_density(alpha = 0.5) +
+  scale_fill_manual(values = c("0" = "green", "1" = "red"), labels = c("NO", "YES")) +
+  labs(x = "Blood Pressure", fill = "Heart Disease") +
+  theme_minimal() +
+  theme(legend.title = element_blank())
+
+
+```
+```{r}
+
+data %>%
+  group_by(cardio) %>%
+  summarise(
+    count = n(),
+    mean = mean(ap_lo, na.rm = TRUE),
+    std = sd(ap_lo, na.rm = TRUE),
+    min = min(ap_lo, na.rm = TRUE),
+    q1 = quantile(ap_lo, 0.25, na.rm = TRUE),
+    median = median(ap_lo, na.rm = TRUE),
+    q3 = quantile(ap_lo, 0.75, na.rm = TRUE),
+    max = max(ap_lo, na.rm = TRUE)
+  )
+
+```
+**Observation:**
+
+As we can see that people who have high blood pressure have high chance that
+they have heart disease. Avg. Blood pressure of person having heart problems is
+134.07 is more than the normal level.
+
+
+**BIVARIATE ANALYSIS**
+
+```{r}
+library(ggplot2)
+
+ggplot(data, aes(x = ap_lo, y = ap_hi, color = factor(cardio), shape = factor(cardio))) +
+  geom_point(alpha = 0.7) +
+  scale_color_manual(values = c("0" = "lightblue", "1" = "red")) +
+  labs(x = "Diastolic Pressure (ap_lo)", y = "Systolic Pressure (ap_hi)", color = "Cardio", shape = "Cardio") +
+  theme_minimal() +
+  theme(legend.title = element_blank()) +
+  theme(legend.position = "top") +
+  ggtitle("Systolic vs Diastolic Blood Pressure by Cardio Condition")
+
+
+```
+
+
+**Observation:**
+People with heart problems have higher systolic pressure and diastolic
+pressure values as per the plot.
+
+
+**Smoke and alcohol analysis**
+
+```{r}
+library(dplyr)
+
+data %>%
+  group_by(smoke) %>%
+  summarise(
+    ap_hi_count = n(),
+    ap_hi_mean = mean(ap_hi, na.rm = TRUE),
+    ap_hi_sd = sd(ap_hi, na.rm = TRUE),
+    ap_hi_min = min(ap_hi, na.rm = TRUE),
+    ap_hi_q1 = quantile(ap_hi, 0.25, na.rm = TRUE),
+    ap_hi_median = median(ap_hi, na.rm = TRUE),
+    ap_hi_q3 = quantile(ap_hi, 0.75, na.rm = TRUE),
+    ap_hi_max = max(ap_hi, na.rm = TRUE),
+    ap_lo_mean = mean(ap_lo, na.rm = TRUE),
+    ap_lo_sd = sd(ap_lo, na.rm = TRUE),
+    ap_lo_min = min(ap_lo, na.rm = TRUE),
+    ap_lo_q1 = quantile(ap_lo, 0.25, na.rm = TRUE),
+    ap_lo_median = median(ap_lo, na.rm = TRUE),
+    ap_lo_q3 = quantile(ap_lo, 0.75, na.rm = TRUE),
+    ap_lo_max = max(ap_lo, na.rm = TRUE)
+  )
+
+
+```
+```{r}
+library(dplyr)
+
+data %>%
+  group_by(alco) %>%
+  summarise(
+    ap_hi_count = n(),
+    ap_hi_mean = mean(ap_hi, na.rm = TRUE),
+    ap_hi_sd = sd(ap_hi, na.rm = TRUE),
+    ap_hi_min = min(ap_hi, na.rm = TRUE),
+    ap_hi_q1 = quantile(ap_hi, 0.25, na.rm = TRUE),
+    ap_hi_median = median(ap_hi, na.rm = TRUE),
+    ap_hi_q3 = quantile(ap_hi, 0.75, na.rm = TRUE),
+    ap_hi_max = max(ap_hi, na.rm = TRUE),
+    ap_lo_mean = mean(ap_lo, na.rm = TRUE),
+    ap_lo_sd = sd(ap_lo, na.rm = TRUE),
+    ap_lo_min = min(ap_lo, na.rm = TRUE),
+    ap_lo_q1 = quantile(ap_lo, 0.25, na.rm = TRUE),
+    ap_lo_median = median(ap_lo, na.rm = TRUE),
+    ap_lo_q3 = quantile(ap_lo, 0.75, na.rm = TRUE),
+    ap_lo_max = max(ap_lo, na.rm = TRUE)
+  )
+
+
+```
+**Observation:**
+Although there is not much difference but still we can say that person who
+smoke or take alcohol have higher blood pressure than other person. And hence
+chances that they can have heart problems also increases.
+
+Cardio Vs Smoke and Cardio Vs Alco
+```{r}
+
+library(ggplot2)
+library(gridExtra)
+
+# Plot 1: Cardio vs Smoke
+plot1 <- ggplot(data, aes(x = as.factor(cardio), fill = as.factor(smoke))) +
+  geom_bar(position = "dodge") +
+  scale_fill_manual(values = c("blue", "red")) +
+  labs(x = "Cardio", fill = "Smoke") +
+  theme_minimal()
+
+# Plot 2: Cardio vs Alco
+plot2 <- ggplot(data, aes(x = as.factor(cardio), fill = as.factor(alco))) +
+  geom_bar(position = "dodge") +
+  scale_fill_manual(values = c("blue", "red")) +
+  labs(x = "Cardio", fill = "Alco") +
+  theme_minimal()
+
+# Arrange side by side
+grid.arrange(plot1, plot2, ncol = 2)
+
+```
+
+**Observation:**
+plot shows that those who smoke and have high blood pressure are mostly having
+heart problems
+
+
+**Cholesterol analysis**
+
+
+```{r}
+library(dplyr)
+
+# Group by cholesterol and summarize ap_hi and ap_lo
+data %>%
+  group_by(cholesterol) %>%
+  summarise(
+    ap_hi_mean = mean(ap_hi, na.rm = TRUE),
+    ap_hi_sd = sd(ap_hi, na.rm = TRUE),
+    ap_hi_min = min(ap_hi, na.rm = TRUE),
+    ap_hi_max = max(ap_hi, na.rm = TRUE),
+    ap_lo_mean = mean(ap_lo, na.rm = TRUE),
+    ap_lo_sd = sd(ap_lo, na.rm = TRUE),
+    ap_lo_min = min(ap_lo, na.rm = TRUE),
+    ap_lo_max = max(ap_lo, na.rm = TRUE)
+  )
+
+
+```
+
+```{r}
+library(ggplot2)
+
+# Scatter plot with ap_lo on x-axis, ap_hi on y-axis, cardio as shape, and cholesterol as color
+ggplot(data, aes(x = ap_lo, y = ap_hi, shape = as.factor(cardio), color = as.factor(cholesterol))) +
+  geom_point() +
+  scale_color_manual(values = c("orange", "red", "purple")) +
+  labs(x = "ap_lo", y = "ap_hi", shape = "Cardio", color = "Cholesterol") +
+  theme_minimal() +
+  theme(legend.position = "right") +
+  ggtitle("Scatterplot of Blood Pressure with Cardio and Cholesterol")
+
+
+```
+**Observation:**
+person with high cholesterol level have higher blood pressure and have more
+chance to have heart problems
+
+```{r}
+library(ggplot2)
+
+# Count plot for cholesterol with cardio as hue
+ggplot(data, aes(x = as.factor(cholesterol), fill = as.factor(cardio))) +
+  geom_bar(position = "dodge") +
+  labs(x = "Cholesterol", fill = "Cardio") +
+  theme_minimal() +
+  ggtitle("Cholesterol vs Cardio Count Plot") +
+  theme(plot.title = element_text(hjust = 0.5))
+
+
+```
+
+
+**Observation:**
+Most of the Person with **cholesterol level 2 and 3** have  heart disease.
+
+**Gender analysis**
+
+```{r}
+
+library(ggplot2)
+
+# Count plot for cardio with gender as hue
+ggplot(data, aes(x = as.factor(cardio), fill = as.factor(gender))) +
+  geom_bar(position = "dodge") +
+  scale_fill_manual(values = c("lightgreen", "red")) +
+  labs(x = "Cardio", fill = "Gender") +
+  theme_minimal() +
+  ggtitle("Cardio vs Gender Count Plot") +
+  theme(plot.title = element_text(hjust = 0.5))
+
+```
+
+
+**Observation:**
+
+Over 20000 females and 10000 males have heart diseases.
+
+**Glucose and Physical Activity**
+
+```{r}
+library(ggplot2)
+library(gridExtra)
+
+# Gluc vs Cardio Count Plot
+p1 <- ggplot(data, aes(x = as.factor(gluc), fill = as.factor(cardio))) +
+  geom_bar(position = "dodge") +
+  scale_fill_manual(values = c("lightgreen", "red")) +
+  labs(x = "Gluc", fill = "Cardio") +
+  theme_minimal() +
+  ggtitle("Gluc vs Cardio") +
+  theme(plot.title = element_text(hjust = 0.5))
+
+# Active vs Cardio Count Plot
+p2 <- ggplot(data, aes(x = as.factor(active), fill = as.factor(cardio))) +
+  geom_bar(position = "dodge") +
+  scale_fill_manual(values = c("lightgreen", "red")) +
+  labs(x = "Active", fill = "Cardio") +
+  theme_minimal() +
+  ggtitle("Active vs Cardio") +
+  theme(plot.title = element_text(hjust = 0.5))
+
+# Arrange plots side by side
+grid.arrange(p1, p2, ncol = 2)
+
+
+```
+
+**Observation**:
+Both the feature doesn't seem to have much correlation with cardiac problems.
+Hence these features are not that important as others.
+
+
+**Correlation Matrix**
+
+```{r}
+library(corrplot)
+
+# Calculate the correlation matrix
+corr_matrix <- cor(data)
+
+# Plot the heatmap
+corrplot(corr_matrix, method = "color", addCoef.col = "black", tl.col = "black", 
+         tl.srt = 45, col = colorRampPalette(c("red", "white", "blue"))(200), 
+         number.cex = 0.7)
+
+```
+
+## Modelling 
+
+**Convert target variable to factor (if not already)**
+
+```{r}
+data$cardio <- as.factor(data$cardio)
+
+# Split dataset into training (80%) and testing (20%)
+set.seed(123)
+trainIndex <- createDataPartition(data$cardio, p = 0.8, list = FALSE)
+trainData <- data[trainIndex, ]
+testData <- data[-trainIndex, ]
+
+dim(trainData)
+dim(testData)
+
+
+```
+
+
+**Apply J48 (C4.5 Implementation in RWeka)**
+
+```{r}
+# Train J48 model
+library(RWeka)
+library(caret)
+
+j48_model <- J48(cardio ~ ., data = trainData)
+
+# Predict on test set
+j48_pred <- predict(j48_model, testData)
+
+# Evaluate Model Performance
+conf_matrix <- confusionMatrix(j48_pred, testData$cardio)
+
+# Print confusion matrix
+print(conf_matrix)
+
+# Extract metrics
+precision <- conf_matrix$byClass["Pos Pred Value"]  # Precision
+recall <- conf_matrix$byClass["Sensitivity"]        # Recall
+f1_score <- 2 * (precision * recall) / (precision + recall)  # F1-Score
+
+# Display metrics
+cat("Precision:", precision, "\n")
+cat("Recall:", recall, "\n")
+cat("F1-Score:", f1_score, "\n")
+
+
+```
+**Apply C5.0 Decision Tree**
+
+```{r}
+# Load necessary libraries
+library(C50)
+library(caret)
+
+# Train C5.0 model
+c50_model <- C5.0(cardio ~ ., data = trainData)
+
+# Predict on test set
+c50_pred <- predict(c50_model, testData)
+
+# Evaluate Model Performance
+conf_matrix <- confusionMatrix(c50_pred, testData$cardio)
+
+# Print confusion matrix
+print(conf_matrix)
+
+# Extract metrics
+precision <- conf_matrix$byClass["Pos Pred Value"]  # Precision
+recall <- conf_matrix$byClass["Sensitivity"]        # Recall
+f1_score <- 2 * (precision * recall) / (precision + recall)  # F1-Score
+
+# Display metrics
+cat("Precision:", precision, "\n")
+cat("Recall:", recall, "\n")
+cat("F1-Score:", f1_score, "\n")
+
+
+```
+**Apply C5.0 Rules-Based Model**
+
+```{r}
+
+# Load necessary libraries
+library(C50)
+library(caret)
+
+# Train C5.0 model with rule-based classifier
+c50_rules_model <- C5.0(cardio ~ ., data = trainData, rules = TRUE)
+
+# Predict on test set
+c50_rules_pred <- predict(c50_rules_model, testData)
+
+# Evaluate Model Performance
+conf_matrix <- confusionMatrix(c50_rules_pred, testData$cardio)
+
+# Print confusion matrix
+print(conf_matrix)
+
+# Extract metrics
+precision <- conf_matrix$byClass["Pos Pred Value"]  # Precision
+recall <- conf_matrix$byClass["Sensitivity"]        # Recall
+f1_score <- 2 * (precision * recall) / (precision + recall)  # F1-Score
+
+# Display metrics
+cat("Precision:", precision, "\n")
+cat("Recall:", recall, "\n")
+cat("F1-Score:", f1_score, "\n")
+
+```
+**Apply Cross-Validation**
+
+```{r}
+# Set seed for reproducibility
+set.seed(123)
+
+# Define cross-validation method (10-fold CV)
+train_control <- trainControl(method = "cv", number = 10)
+
+# Train the model using cross-validation
+model <- train(
+  cardio ~ .,               # cardio is the target variable
+  data = data,              # your dataset
+  method = "rpart",         # Decision Tree (you can use other methods)
+  trControl = train_control
+)
+
+# Print model summary
+print(model)
+
+# Check model performance
+model$results
+
+```
+
+**Accuracy comparison**
+
+```{r}
+
+j48_acc <- mean(j48_pred == testData$cardio)
+c50_acc <- mean(c50_pred == testData$cardio)
+c50_rules_acc <- mean(c50_rules_pred == testData$cardio)
+
+accuracy_results <- data.frame(
+  Model = c("J48", "C5.0 Tree", "C5.0 Rules"),
+  Accuracy = c(j48_acc, c50_acc, c50_rules_acc)
+)
+
+print(accuracy_results)
+
+```
+
+# Model Comparison
+
+Here i reshape the data for visualization for the model comparison
+```{r}
+# Load libraries
+library(ggplot2)
+library(reshape2)
+
+# Create a data frame for your model metrics
+model_comparison <- data.frame(
+  Model = c("J48", "C5.0 Tree", "C5.0 Rules"),
+  Accuracy = c(0.728, 0.733, 0.733),
+  Precision = c(0.716, 0.716, 0.716),
+  Recall = c(0.781, 0.781, 0.781),
+  F1_Score = c(0.747, 0.747, 0.747)
+)
+
+# Reshape data for visualization
+model_comparison_long <- melt(model_comparison, id.vars = "Model")
+
+# Plot performance metrics
+ggplot(model_comparison_long, aes(x = Model, y = value, fill = variable)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  labs(title = "Cardio Model Performance Comparison", x = "Decision Tree Model", y = "Metric Value") +
+  theme_minimal() +
+  scale_fill_manual(values = c("blue", "red", "green", "purple"))
+
+```
+
+Comments:
+The C5.0 Rules model performed marginally better than the other two. The
+difference is very small, suggesting that the models are learning similar
+patterns in the data. Accuracy around 72–73% is decent,
+
+These metrics indicate a reasonably balanced model performance:
+
+Precision (0.716): About 71.6% of the positive predictions were accurate.
+Recall (0.781): The model correctly identified 78.1% of actual positives.
+F1-Score (0.747): This value balances precision and recall, showing an overall performance of 74.7%.
+

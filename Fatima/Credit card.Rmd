@@ -1,0 +1,445 @@
+---
+title: "Credit card dataset for clustering"
+author: "Fatima Muhammed CST/19/COM/00318"
+date: "2025-03-24"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+```
+
+## Introduction
+
+The sample Dataset summarizes the usage behavior of about 9000 active credit
+card holders during the last 6 months. The file is at a customer level with 18
+behavioral variables. You need to develop a customer segmentation to define
+marketing strategy from the dataset.
+
+## Data Description
+
+Following is the Data Dictionary for Credit Card dataset:
+* CUST_ID: Identification of Credit Card holder (Categorical)
+* BALANCE: Balance amount left in their account to make purchases
+* BALANCE_FREQUENCY: How frequently the Balance is updated, score between 0 and 1 (1 = frequently updated, 0 = not frequently updated)
+* PURCHASES: Amount of purchases made from account
+* ONEOFF_PURCHASES: Maximum purchase amount done in one-go
+* INSTALLMENTS_PURCHASES: Amount of purchase done in installment
+* CASH_ADVANCE: Cash in advance given by the user
+* PURCHASES_FREQUENCY: How frequently the Purchases are being made, score between 0 and 1 (1 = frequently purchased, 0 = not frequently purchased)
+* ONEOFFPURCHASESFREQUENCY: How frequently Purchases are happening in one-go (1 = frequently purchased, 0 = not frequently purchased)
+* PURCHASESINSTALLMENTSFREQUENCY: How frequently purchases in installments are being done (1 = frequently done, 0 = not frequently done)
+* CASHADVANCEFREQUENCY: How frequently the cash in advance being paid
+* CASHADVANCETRX: Number of Transactions made with "Cash in Advanced"
+* PURCHASES_TRX: Number of purchase transactions made
+* CREDIT_LIMIT: Limit of Credit Card for user
+* PAYMENTS: Amount of Payment done by user
+* MINIMUM_PAYMENTS: Minimum amount of payments made by user
+* PRCFULLPAYMENT: Percent of full payment paid by user
+* TENURE: Tenure of credit card service for user
+
+## Load Data
+
+```{r}
+
+# Load the data
+data <- read.csv('CC GENERAL.csv')
+
+```
+
+**Data overview**
+
+```{r}
+
+cat('Data shape: ', dim(data), '\n')
+head(data)
+
+
+```
+
+
+```{r, warning=FALSE}
+
+library(psych)
+describe(data)
+```
+
+## Data Cleaning
+
+**First, we check the missing/corrupted values.**
+
+```{r}
+
+# Count missing values in each column
+colSums(is.na(data))
+
+```
+
+We will impute these missing values with the median value.
+
+```{r}
+
+# Impute missing values with median
+data$MINIMUM_PAYMENTS[is.na(data$MINIMUM_PAYMENTS)] <- median(data$MINIMUM_PAYMENTS, na.rm = TRUE)
+data$CREDIT_LIMIT[is.na(data$CREDIT_LIMIT)] <- median(data$CREDIT_LIMIT, na.rm = TRUE)
+
+colSums(is.na(data))
+
+```
+
+
+No more missing values
+
+**Now we drop CUST_ID column, then normalize the input values using StandardScaler().**
+
+```{r}
+
+# Drop ID column
+data <- data[, !names(data) %in% 'CUST_ID']
+
+# Normalize values
+library(scales)
+data_scaled <- scale(data)
+
+# Replace data with scaled data
+data <- as.data.frame(data_scaled)
+
+# Check shape
+dim(data)
+
+```
+
+## Clustering
+
+**Correlation Check**
+
+```{r, fig.height=20, fig.height=20}
+
+library(ggplot2)
+library(corrplot)
+
+# Compute correlation matrix
+cor_matrix <- cor(data, use = "complete.obs")
+
+# Plot heatmap
+corrplot(cor_matrix, method = "color", col = colorRampPalette(c("blue", "white", "red"))(200), 
+         tl.col = "black", tl.srt = 45, addCoef.col = "black", number.cex = 0.7, mar = c(1, 1, 1, 1))
+
+```
+
+**Agglomerative Hierarchical Clustering with PCA**
+
+```{r}
+# Load necessary libraries
+library(FactoMineR)
+library(ggplot2)
+library(dplyr)
+
+# Perform PCA
+pca_result <- PCA(data, scale.unit = TRUE, ncp = 2, graph = FALSE)
+pca_data <- as.data.frame(pca_result$ind$coord)
+
+# Agglomerative Clustering with 5 Clusters
+hc_5 <- hclust(dist(pca_data))
+clusters_5 <- cutree(hc_5, k = 5)
+pca_data$target_5 <- as.factor(clusters_5)
+
+# Agglomerative Clustering with 6 Clusters
+hc_6 <- hclust(dist(pca_data))
+clusters_6 <- cutree(hc_6, k = 6)
+pca_data$target_6 <- as.factor(clusters_6)
+
+# Plot for 5 Clusters
+plot_5 <- ggplot(pca_data, aes(x = Dim.1, y = Dim.2, color = target_5)) +
+  geom_point() +
+  labs(title = 'Agglomerative Hierarchical Clustering with 5 Clusters',
+       x = 'PC1', y = 'PC2') +
+  theme_minimal()
+
+# Plot for 6 Clusters
+plot_6 <- ggplot(pca_data, aes(x = Dim.1, y = Dim.2, color = target_6)) +
+  geom_point() +
+  labs(title = 'Agglomerative Hierarchical Clustering with 6 Clusters',
+       x = 'PC1', y = 'PC2') +
+  theme_minimal()
+
+# Display plots side by side
+library(gridExtra)
+grid.arrange(plot_5, plot_6, ncol = 2)
+
+
+```
+
+
+## Exploratory Data Analysis
+
+**We are picking 6 clusters for this EDA. Let's make a Seaborn pairplot with selected/best columns to show how the clusters are segmenting the samples:**
+
+```{r}
+# Select best columns
+best_cols <- c("BALANCE", "PURCHASES", "CASH_ADVANCE", "CREDIT_LIMIT", "PAYMENTS", "MINIMUM_PAYMENTS")
+
+# Dataframe with best columns
+data_final <- data[, best_cols]
+
+cat("New dataframe with best columns has just been created. Data shape:", dim(data_final), "\n")
+
+
+```
+
+```{r}
+# Apply hierarchical clustering (Agglomerative)
+d <- dist(data_final)  # Calculate distance matrix
+hc <- hclust(d, method = "ward.D2")  # Agglomerative clustering
+data_final$cluster <- cutree(hc, k = 6)  # Cut tree into 6 clusters
+
+# Load GGally for pairplot
+library(GGally)
+
+# Create a pairplot with clusters
+ggpairs(data_final, aes(color = as.factor(cluster), alpha = 0.5))
+
+
+```
+We can see some interesting correlations between features and clusters that we have made above. Let's get into detailed analysis.
+
+**Cluster 0 (Blue): The Average Joe**
+
+```{r}
+# Load libraries
+library(GGally)
+library(ggplot2)
+
+# Convert cluster to factor for coloring
+data_final$cluster <- as.factor(data_final$cluster)
+
+# Create a pairplot with specified x and y variables
+ggpairs(data_final,
+        columns = c("PURCHASES", "PAYMENTS", "CREDIT_LIMIT", "cluster"),
+        aes(color = cluster, alpha = 0.5),
+        upper = list(continuous = "blank"),
+        diag = list(continuous = "blank"),
+        lower = list(continuous = "points")) +
+  theme_bw(base_size = 14)
+
+
+```
+This group of users, while having the highest number of users by far, is fairly
+frugal: they have lowest purchases, second lowest payments, and lowest credit
+limit. The bank would not make much profit from this group, so there should be
+some sorts of strategy to attract these people more.
+
+
+**Cluster 1 (Orange): The Active Users**
+
+```{r}
+# Load libraries
+library(ggplot2)
+library(tidyr)
+
+# Convert cluster to factor
+data_final$cluster <- as.factor(data_final$cluster)
+
+# Pivot data for easier plotting
+data_long <- pivot_longer(data_final, cols = c("PURCHASES", "PAYMENTS", "CREDIT_LIMIT"), 
+                          names_to = "Feature", values_to = "Value")
+
+# Plot
+ggplot(data_long, aes(x = Value, y = cluster, color = cluster)) +
+  geom_point(alpha = 0.6) +
+  facet_wrap(~Feature, scales = "free_x") +
+  theme_minimal(base_size = 14) +
+  labs(title = "Pairplot of Selected Features by Cluster", 
+       x = "Feature Value", y = "Cluster") +
+  theme(legend.position = "bottom")
+
+```
+
+This group of users is very active in general: they have second highest
+purchases, third highest payments, and the most varied credit limit values. This
+type of credit card users is the type you should spend the least time and effort
+on, as they are already the ideal one.
+
+
+**Cluster 2 (Green): The Big Spenders**
+The Big Spenders. This group is by far the most interesting to analyze, since
+they do not only have the highest number of purchases, highest payments, highest
+minimum payments, but the other features are also wildly varied in values. Let's
+take a quick look at the pairplots.
+
+
+
+```{r}
+
+# Load necessary libraries
+library(ggplot2)
+library(tidyr)
+
+# Convert 'cluster' to a factor for proper coloring
+data_final$cluster <- as.factor(data_final$cluster)
+
+# Select relevant columns and reshape data for plotting
+plot_data <- data_final[, c("PURCHASES", "PAYMENTS", "CREDIT_LIMIT", "cluster")]
+plot_data_long <- pivot_longer(plot_data, cols = c("PURCHASES", "PAYMENTS", "CREDIT_LIMIT"), 
+                               names_to = "Feature", values_to = "Value")
+
+# Plot using ggplot
+ggplot(plot_data_long, aes(x = Value, y = cluster, color = cluster)) +
+  geom_point(alpha = 0.7) +
+  facet_wrap(~ Feature, scales = "free_x") +
+  theme_minimal(base_size = 14) +
+  labs(title = "Cluster Analysis", x = "Feature Values", y = "Cluster") +
+  theme(legend.position = "bottom")
+
+```
+
+As a nature of the "Big Spenders", there are many outliers in this cluster:
+people who have/make abnormally high balance, purchases, cash advance, and
+payment. The graph below will give you an impression of how outlier-heavy this
+cluster is - almost all the green dots are outliers relatively compared to the
+rest of the whole dataset.
+
+```{r}
+# Load necessary libraries
+library(ggplot2)
+
+# Convert 'cluster' to a factor for proper coloring
+data_final$cluster <- as.factor(data_final$cluster)
+
+# Plot PURCHASES vs PAYMENTS colored by cluster
+ggplot(data_final, aes(x = PURCHASES, y = PAYMENTS, color = cluster)) +
+  geom_point(alpha = 0.7) +
+  theme_minimal(base_size = 14) +
+  labs(title = "PURCHASES vs PAYMENTS by Cluster", x = "PURCHASES", y = "PAYMENTS") +
+  theme(legend.position = "right")
+
+
+```
+
+
+**Cluster 3 (Red): The Money Borrowers**
+
+```{r}
+# Load necessary libraries
+library(ggplot2)
+library(tidyr)
+
+# Convert 'cluster' to a factor for proper coloring
+data_final$cluster <- as.factor(data_final$cluster)
+
+# Reshape the data into long format for ggplot
+data_long <- data_final %>%
+  pivot_longer(cols = c("BALANCE", "CASH_ADVANCE", "PAYMENTS"),
+               names_to = "Variable", values_to = "Value")
+
+# Plot each variable against cluster
+ggplot(data_long, aes(x = Value, y = cluster, color = cluster)) +
+  geom_point(alpha = 0.7) +
+  facet_wrap(~ Variable, scales = "free_x") +
+  theme_minimal(base_size = 14) +
+  labs(title = "BALANCE, CASH_ADVANCE, PAYMENTS vs Cluster", x = "Value", y = "Cluster") +
+  theme(legend.position = "right")
+
+```
+
+
+Wildly varied balance, second highest payments, average purchases. The special
+thing about this cluster is that these people have the highest cash advance by
+far - there is even one extreme case that has like 25 cash advance points. We
+call these people "The Money Borrowers".
+
+
+**Cluster 4 (Purple): The High Riskers**
+
+
+```{r}
+# Load necessary libraries
+library(ggplot2)
+
+# Convert 'cluster' to a factor for proper coloring
+data_final$cluster <- as.factor(data_final$cluster)
+
+# Plot MINIMUM_PAYMENTS vs CREDIT_LIMIT colored by cluster
+ggplot(data_final, aes(x = MINIMUM_PAYMENTS, y = CREDIT_LIMIT, color = cluster)) +
+  geom_point(alpha = 0.7) +
+  theme_minimal(base_size = 14) +
+  labs(title = "MINIMUM_PAYMENTS vs CREDIT_LIMIT by Cluster", 
+       x = "MINIMUM_PAYMENTS", y = "CREDIT_LIMIT") +
+  theme(legend.position = "right")
+
+
+```
+
+This group has absurdly high minimum payments while having the second lowest
+credit limit. It looks like the bank has identified them as higher risk.
+
+
+**Cluster 5 (Brown): The Wildcards**
+
+```{r}
+# Load necessary libraries
+library(ggplot2)
+
+# Convert 'cluster' to a factor for proper coloring
+data_final$cluster <- as.factor(data_final$cluster)
+
+# Plot BALANCE vs CREDIT_LIMIT colored by cluster
+ggplot(data_final, aes(x = BALANCE, y = CREDIT_LIMIT, color = cluster)) +
+  geom_point(alpha = 0.7) +
+  theme_minimal(base_size = 14) +
+  labs(title = "BALANCE vs CREDIT_LIMIT by Cluster", 
+       x = "BALANCE", y = "CREDIT_LIMIT") +
+  theme(legend.position = "right")
+
+
+```
+
+This group is troublesome to analyze and to come up with a good marketing
+strategy towards, as both their credit limit and balance values are wildly
+varied. As you can see, the above graph looks like half of it was made of the
+color brown!
+
+
+**Dendogram**
+
+```{r, fig.w}
+# Load necessary libraries
+library(cluster)
+
+# Remove 'cluster' column for clustering
+data_no_cluster <- data_final[, !(names(data_final) %in% 'cluster')]
+
+# Compute the distance matrix
+dist_matrix <- dist(data_no_cluster, method = "euclidean")
+
+# Perform hierarchical clustering
+hc <- hclust(dist_matrix, method = "ward.D2")
+
+# Cut the tree into 6 clusters (based on your earlier choice)
+clusters <- cutree(hc, k = 6)
+
+# Plot the dendrogram with colored clusters
+plot(hc, labels = FALSE, main = "Dendrogram with Cluster Colors", xlab = "", sub = "", cex = 0.7)
+rect.hclust(hc, k = 6, border = c("red", "blue", "green", "purple", "orange", "brown"))
+
+
+```
+## Summary and Possible Marketing Strategy
+
+**Summary**
+
+We have learned a lot from this dataset by segmenting the customers into six
+smaller groups: the Average Joe, the Active Users, the Big Spenders, the Money
+Borrowers, the High Riskers, and the Wildcards. To conclude this cluster
+analysis, let's sum up what we have learned and some possible marketing
+strategies:
+* The Average Joe do not use credit card very much in their daily life. They have healthy finances and low debts. While encouraging these people to use credit cards more is necessary for the company's profit, business ethics and social responsibility should also be considered.
+* Identify active customers in order to apply proper marketing strategy towards them. These people are the main group that we should focus on.
+* Some people are just bad at finance management - for example, the Money Borrowers. This should not be taken lightly.
+* Although we are currently doing a good job at managing the High Riskers by giving them low credit limits, more marketing strategies targeting this group of customers should be considered.
+
+## Conclusion
+
+In this project, we have performed data preprocessing, feature extraction,
+experimented with the Clustering algorithm (Agglomerative Hierarchical Clustering), data
+visualizations, and business analytics.

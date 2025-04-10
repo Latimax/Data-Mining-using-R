@@ -1,0 +1,1123 @@
+---
+title: "Mobile_Price_Prediction"
+author: "Lourin Ejiuwa (CST/19/COM/00284)"
+date: "2025-03-17"
+output:
+  word_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+```
+
+
+## About Dataset
+
+This dataset contains 2,000 mobile phone records with 21 features detailing
+their specifications:
+1.	Performance: RAM ranges from 256 MB to 4 GB, processor speeds from 0.5 GHz to
+3.0 GHz, and storage from 2 GB to 64 GB. 2.	Battery & Display: Battery capacity
+varies between 500 and 1998 mAh. Phones weigh around 140g, with screen
+resolutions from 874×500 to 1633×1960 pixels. 3.	Connectivity: 50% of phones
+have Bluetooth, WiFi, and touchscreens. 76% support 3G, and 52% support 4G.
+4.	Pricing: Phones are categorized into four price ranges (0 = Low, 1 = Medium,
+2 = High, 3 = Very High), influenced by these features.
+
+## Import Libraries
+
+```{r, warning=FALSE}
+# Load necessary libraries
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+
+```
+
+
+## Reading and Understanding the Dataset
+
+**Import Dataset**
+
+```{r}
+
+# Read the CSV file into a data frame
+data <- read.csv('train.csv')
+
+# View the first few rows to confirm it loaded correctly
+head(data)
+
+```
+
+**Discover Data**
+
+```{r}
+# Get dimensions of the dataset
+dims <- dim(data)  # dims[1] = rows, dims[2] = columns
+
+# Print dimensions
+cat("Dimensions of dataset:", dims, "\n")
+cat("Rows:", dims[1], "\nColumns:", dims[2], "\n")
+
+
+```
+
+**Statistical details**
+
+```{r}
+
+summary(data)
+
+```
+
+The overhead table (train) displays: Each feature contains 2000 data recorded.
+There are some numerical features in the dataset including m_dep, px height, and
+sc_w that their min values don't make sense.
+
+**Number of uniqe elements in each columns**
+
+```{r}
+# Get the number of unique elements in each column
+unique_counts <- sapply(data, function(x) length(unique(x)))
+
+# Convert to a data frame and transpose it
+unique_counts_df <- as.data.frame(t(unique_counts))
+
+# View the result
+print(unique_counts_df)
+
+
+```
+
+**Information about the dataframe**
+
+```{r}
+
+str(data)
+
+# Additional info: dimensions, column and names
+cat("Dimensions:", dim(data), "\n")
+cat("Column Names:", colnames(data), "\n")
+
+
+```
+
+
+## Preprocessing
+
+Because some numeric features in the dataset, including m_dep, px height, and
+sc_w, whose minimum values did not make sense, should be investigated more
+deeply.
+
+**Mobile Depth (Cm):**
+
+```{r}
+# Summary statistics for the 'm_dep' column
+summary(data$m_dep)
+
+```
+
+The minimum range of mobile phone depth varies depending on the manufacturer,
+model, and specific phone design. However, most smartphones have a thickness
+(depth) in the range of 7mm to 10mm. Some high-end models may be thinner than
+this range, with depths as low as 6mm or even less.
+
+**Mobile Height (Cm):**
+
+```{r}
+# Summary statistics for the 'px_height' column
+summary(data$px_height)
+
+```
+I considered the dimensions of the Nokia 1100 (96 x 65 pixels, 3:2 ratio) as the
+minimum of Pixel Resolution.➡️ 65 pixels
+
+**Screen Width (Cm):**
+
+```{r}
+# Summary statistics for the 'sc_w' column
+summary(data$sc_w)
+
+```
+I will consider the minimum Screen Width to be 1 inch = 2.54 centimeters.
+
+## Data Cleaning
+
+**Let's first address what we discussed in the data preprocessing section.**
+
+-Mobile Depth
+
+```{r}
+# Find values below 0.5 cm in 'm_dep'
+below_threshold <- data$m_dep[data$m_dep < 0.5]
+
+# Count the number of values below 0.5 cm
+num_below_threshold <- length(below_threshold)
+
+# Print the result
+cat("Number of values below 0.5 cm in 'm_dep' feature:", num_below_threshold, "\n")
+
+```
+```{r}
+# Replace values below 0.5 cm with 0.5 cm in 'm_dep'
+data$m_dep[data$m_dep < 0.5] <- 0.5
+
+# Check summary statistics for 'm_dep'
+summary(data$m_dep)
+
+
+```
+
+-Pixel Resolution
+
+
+```{r}
+
+# Find values below 65 pixels in 'px_height'
+below_threshold1 <- data$px_height[data$px_height < 65]
+
+# Count the number of values below 65 pixels
+num_below_threshold1 <- length(below_threshold1)
+
+# Print the result
+cat("Number of values below 65 pixels in 'px_height' feature:", num_below_threshold1, "\n")
+
+```
+
+
+```{r}
+# Replace values below 65 pixels with 65 pixels in 'px_height'
+data$px_height[data$px_height < 65] <- 65
+
+# Check summary statistics for 'px_height'
+summary(data$px_height)
+
+
+```
+
+-Screen Width
+
+
+```{r}
+# Find values below 2.54 cm in 'sc_w'
+below_threshold2 <- data$sc_w[data$sc_w < 2.54]
+
+# Count the number of values below 2.54 cm
+num_below_threshold2 <- length(below_threshold2)
+
+# Print the result
+cat("Number of values below 2.54 cm in 'sc_w' feature:", num_below_threshold2, "\n")
+
+```
+```{r}
+# Replace values below 2.54 cm with 2.54 cm in 'sc_w'
+data$sc_w[data$sc_w < 2.54] <- 2.54
+
+# Check summary statistics for 'sc_w'
+summary(data$sc_w)
+
+
+```
+**Checking for missing values**
+
+```{r}
+# Count missing values for each column
+missing_values <- colSums(is.na(data))
+
+# Convert to data frame for plotting
+missing_values_df <- data.frame(Column = names(missing_values), Count = missing_values)
+
+# Plot the missing values heatmap
+ggplot(missing_values_df, aes(x = Column, y = Count, fill = Count)) +
+  geom_tile(color = "white") +
+  scale_fill_gradient(low = "lightblue", high = "darkblue") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  ggtitle("Count missing values (data)")
+
+
+```
+
+There aren't any missing values in the dataset.
+
+
+
+**Duplicated Data**
+
+```{r}
+# Count duplicated rows in the dataset
+num_duplicates <- sum(duplicated(data))
+
+# Print the result
+cat("Number of duplicated rows:", num_duplicates, "\n")
+
+```
+
+**Outliers**
+
+```{r}
+# Separate numerical and categorical features
+num_cols <- data %>% select(battery_power, clock_speed, fc, int_memory, m_dep, mobile_wt,
+                            pc, px_height, px_width, ram, sc_h, sc_w, talk_time)
+
+cat_cols <- data %>% select(blue, dual_sim, four_g, n_cores, three_g, touch_screen, wifi)
+
+# Separate numerical and categorical column names into different lists
+numerical_columns <- c('battery_power', 'clock_speed', 'fc', 'int_memory', 'm_dep', 
+                       'mobile_wt', 'pc', 'px_height', 'px_width', 'ram', 'sc_h', 
+                       'sc_w', 'talk_time')
+
+categorical_columns <- c('blue', 'dual_sim', 'four_g', 'n_cores', 'three_g', 
+                         'touch_screen', 'wifi')
+
+# Print the lists
+print(numerical_columns)
+print(categorical_columns)
+
+```
+
+
+**Visual features**
+
+```{r, fig.height=20, fig.height=16}
+
+library(e1071)
+library(ggplot2)
+library(gridExtra)
+
+# Custom function to plot boxplots
+boxplots_custom <- function(dataset, columns_list, suptitle) {
+  plots <- lapply(columns_list, function(col) {
+    ggplot(dataset, aes(x = .data[[col]])) +
+      geom_boxplot(fill = "#6fcfbc", color = "black", outlier.color = "red") +
+      theme_minimal() +
+      labs(title = paste0(col, ", skewness: ", round(skewness(dataset[[col]], na.rm = TRUE), 2)))
+  })
+  
+  # Arrange plots in a grid
+  grid.arrange(grobs = plots, ncol = 3, top = suptitle)
+}
+
+# Call the function
+boxplots_custom(data, numerical_columns, "Boxplots for each variable")
+
+```
+
+
+
+**Detect Outliers**
+
+```{r}
+
+# Calculate Q1, Q3, and IQR for each numerical column
+Q1 <- apply(data[numerical_columns], 2, quantile, 0.25)
+Q3 <- apply(data[numerical_columns], 2, quantile, 0.75)
+IQR <- Q3 - Q1
+
+# Identify outliers using the IQR method
+outliers <- sapply(numerical_columns, function(col) {
+  data[[col]] < (Q1[col] - 1.5 * IQR[col]) | data[[col]] > (Q3[col] + 1.5 * IQR[col])
+})
+
+# Count the number of outliers for each variable
+num_outliers <- colSums(outliers)
+
+# Display the number of outliers for each variable
+t(data.frame(num_outliers))
+
+```
+
+While the boxplots in the table above indicate the presence of outliers in the
+fc and px_height features, we cannot justify removing them from the dataset
+without a strong rationale to do so. Therefore, we have decided to retain these
+outliers in our analysis.
+
+
+**Check for Noise**
+
+
+```{r, fig.height=20}
+# Load required package
+library(GGally)
+library(ggplot2)
+
+# Create the pairplot
+dnp <- ggpairs(data[, numerical_columns], 
+               title = sprintf("Pairplot for each variable\n(Range: min=%.2f, max=%.2f)",
+                               min(data[, numerical_columns], na.rm = TRUE), 
+                               max(data[, numerical_columns], na.rm = TRUE)))
+
+# Show the plot
+print(dnp)
+
+
+```
+
+
+
+
+It seems that there isn't any Noisy data in the train dataset.
+
+##Exploratory Data Analysis (EDA)
+
+**Continuos and Categorical Data Distribution**
+
+```{r}
+
+# Load libraries
+library(ggplot2)
+
+# Set target and features
+TARGET <- 'price_range'
+FEATURES <- setdiff(names(data), c('data', TARGET))
+
+# Separate categorical and continuous features
+cat_features <- FEATURES[sapply(data[FEATURES], function(col) length(unique(col)) < 25)]
+cont_features <- FEATURES[sapply(data[FEATURES], function(col) length(unique(col)) >= 25)]
+
+num_cat_features <- length(cat_features)
+num_cont_features <- length(cont_features)
+total_features <- num_cat_features + num_cont_features
+
+# Create a pie chart dataframe with percentages
+df_pie <- data.frame(
+  Category = c("Categorical (<25 Unique Values)", "Continuous"),
+  Count = c(num_cat_features, num_cont_features),
+  Percentage = c((num_cat_features / total_features) * 100, (num_cont_features / total_features) * 100)
+)
+
+# Plot with improved colors and percentage labels
+ggplot(df_pie, aes(x = "", y = Percentage, fill = Category)) +
+  geom_bar(stat = "identity", width = 1, color = "white") +
+  coord_polar("y", start = 0) +
+  scale_fill_manual(values = c("#1F77B4", "#FF7F0E")) +
+  theme_void() +
+  geom_text(aes(label = sprintf("%.1f%%", Percentage)), position = position_stack(vjust = 0.5), color = "white", size = 5) +
+  ggtitle("Categorical vs Continuous Features") +
+  theme(legend.text = element_text(size = 12),
+        plot.title = element_text(size = 16, hjust = 0.5))
+
+# Print the summary
+cat("Total number of features except for the target:", total_features, "\n")
+cat("Number of categorical (<25 Unique Values) features:", num_cat_features, "\n")
+cat("Number of continuous features:", num_cont_features, "\n")
+
+```
+
+
+**Data Imbalance**
+
+```{r}
+# Count the number of occurrences of each value in the 'price_range' column
+value_counts <- table(data$price_range)
+
+# Define the label strings correctly
+labels <- c('Low cost', 'Medium cost', 'High cost', 'Very high cost')
+
+# Define the colors for each pie slice
+colors <- c('#4d9b68', '#538e8a', '#468e71', '#59ae8c')
+
+# Create the pie chart with percentages and counts
+percentages <- round(value_counts / sum(value_counts) * 100, 1)
+labels_with_values <- paste0(labels, "\n", percentages, "% (", value_counts, ")")
+
+# Plot the pie chart
+pie(value_counts, labels = labels_with_values, col = colors, main = "Balanced or Imbalanced?", border = "white")
+
+
+```
+
+
+The above charts show that all classes of the target variable have the same
+count. So, the target data is completely balanced.
+
+**Univariate Analysis**
+
+-Exploring Categorical Features
+
+```{r, fig.height=16}
+library(ggplot2)
+library(gridExtra)
+
+# Loop through categorical columns to plot counts
+plot_list <- list()
+
+for (col in categorical_columns) {
+  # Count plot
+  p1 <- ggplot(data, aes_string(y = col)) +
+    geom_bar(fill = '#4d9b68') +
+    ggtitle(paste('Count of', col)) +
+    theme_minimal() +
+    geom_text(stat = 'count', aes(label = ..count..), hjust = -0.1) +
+    coord_flip()
+  
+  # Count plot per price range
+  p2 <- ggplot(data, aes_string(y = col, fill = 'factor(price_range)')) +
+    geom_bar(position = 'dodge') +
+    ggtitle(paste('Count of', col, 'per Price range')) +
+    theme_minimal() +
+    geom_text(stat = 'count', aes(label = ..count..), position = position_dodge(width = 0.9), hjust = -0.1) +
+    scale_fill_manual(values = c('#4d9b68', '#538e8a', '#468e71', '#59ae8c'), name = "Price Range") +
+    coord_flip()
+  
+  # Store the plots
+  plot_list <- append(plot_list, list(p1, p2))
+}
+
+# Display plots in a grid layout
+grid.arrange(grobs = plot_list, ncol = 2)
+
+```
+
+Observations: 
+-Bluetooth:
+The count of the blue chart shows that mobile phones without Bluetooth have the
+highest frequency than the ones with Bluetooth. Moreover, the count of blue per
+price range shows that in the group of mobile phones without Bluetooth, the
+Low-cost and High-cost phones have the highest frequency, and on the other hand,
+in the group of mobile phones with Bluetooth, the Very high-cost phones have the
+highest frequency. 
+-Dual Sim:
+The count of the dual_sim chart shows that mobile phones which have Dual Sim
+have the highest frequency. Moreover, the count of dual_sim per price range
+shows that in the group of mobile phones without Dual Sim, the High-cost and
+Low-cost phones have the highest frequency, and in the group of mobile phones
+with Dual Sim, the Very high-cost phones have the highest frequency. 
+-4G:
+The count of the four_g chart shows that mobile phones which have 4G have the
+highest frequency than the ones without 4G. Moreover, the count of four_g per
+price range shows that in the group of mobile phones with 4G, the Medium-cost
+phones have the highest frequency. Number of Cores:
+The count of the n-cores chart shows that mobile phones containing 4 cores have
+the highest frequency. Moreover, the count of n-cores per price range shows that
+in the group of mobile phones with 4 cores, the High-cost phones have the
+highest frequency, and in the group of mobile phones containing 4 cores, the
+Medium-cost phones have the highest frequency. 
+-3G:
+The count of the three_g chart shows that mobile phones with 3G have the highest
+frequency than the ones without 3G. Moreover, the count of three_g per price
+range shows that in the group of mobile phones with 3G, the High-cost phones
+have the highest frequency, and in the group of mobile phones without 3G, the
+Low-cost phones have the highest frequency. 
+-Touch Screen:
+The count of the touch_screen chart shows that mobile phones which have Touch
+Screen have the highest frequency than the ones without Touch Screen. Moreover,
+the count of touch_screen per price range shows that in the group of mobile
+phones with Touch Screen, the Low-cost phones have the highest frequency, and in
+the group of mobile phones without Touch Screen, the High-cost phones have the
+highest frequency. 
+-Wifi:
+The count of the wifi chart shows that mobile phones which have Wifi have the
+highest frequency than the ones without Wifi. Moreover, the count of wifi per
+price range shows that in the group of mobile phones with Wifi, the Very
+high-cost phones have the highest frequency, and in the group of mobile phones
+without Wifi, the Low-cost phones have the highest frequency.
+
+**Exploring Numerical Features**
+
+```{r, fig.height=20, fig.width=16}
+library(ggplot2)
+library(gridExtra)
+
+# Create an empty list to store plots
+plot_list <- list()
+
+# Loop through numerical columns to plot distributions and boxplots
+for (col in numerical_columns) {
+  
+  # KDE Plot (Density Plot)
+  p1 <- ggplot(data, aes_string(x = col, fill = "factor(price_range)")) +
+    geom_density(alpha = 0.7) +
+    ggtitle(paste('Distribution of', col)) +
+    scale_fill_manual(values = c('#4d9b68', '#538e8a', '#468e71', '#59ae8c'), name = "Price Range") +
+    theme_minimal()
+  
+  # Box Plot
+  p2 <- ggplot(data, aes_string(y = "factor(price_range)", x = col, fill = "factor(price_range)")) +
+    geom_boxplot(alpha = 0.7) +
+    ggtitle(paste('BoxPlot of', col)) +
+    scale_fill_manual(values = c('#4d9b68', '#538e8a', '#468e71', '#59ae8c'), name = "Price Range") +
+    theme_minimal()
+  
+  # Add plots to the list
+  plot_list <- append(plot_list, list(p1, p2))
+}
+
+# Arrange the plots in a grid (13 rows, 2 columns)
+grid.arrange(grobs = plot_list, ncol = 2)
+
+
+```
+
+Observations:
+A normal distribution (with no skewness) is observed in the features of int_memory, mobile_wt, pc and talk time for all price ranges.
+
+Battery Power:
+
+Mobile phones with price ranges of 0-3 mostly have battery_power at the range of 600-800, 700-1350, 600-900, and 1500-1900 mAh, respectively.
+Clock Speed:
+
+Mobile phones with all price ranges mostly have clock_speed at the range of 0.4-0.8.
+A positive skewness is observed in the distribution of clock_speed for all price ranges.
+The box plot of clock_speed indicates that all price ranges have the same median equal 1.5.
+Front Camera:
+
+Mobile phones with all price ranges mostly have fc in the range of 0-2.5 megapixels.
+A positive skewness is observed in the distribution of fc for all price ranges.
+The box plot of fc indicates that all price ranges have the same median equal 3 megapixels.
+Internal Memory:
+
+Mobile phones with price ranges of 0-3 mostly have int_memory at the range of 10-30, 35-50, 13-20, and 40-50 gigabytes, respectively.
+Mobile Depth:
+
+A positive skewness is observed in the distribution of m_dep for all price ranges.
+Mobile phones with all price ranges mostly have m_dep at the range of 0.5-0.55 cm.
+Pixel Resolution Height:
+
+A positive skewness is observed in the distribution of px_height for all price ranges.
+Mobile phones with all price ranges mostly have px_height in the range of 65-500 pixels.
+Pixel Resolution Width:
+
+Mobile phones with price ranges of 0-3 mostly have px_width in the range of 750-900, 700-1350, 750-1200, and 1500-1700 pixels, respectively.
+Ram:
+
+Mobile phones with price ranges of 0-3 mostly have ram at the range of 450-750, 1350-1900, 2500-2800, and 3500-3950 megabytes, respectively.
+Screen Width:
+
+A positive skewness is observed in the distribution of sc_w for all price ranges.
+Mobile phones with all price ranges mostly have sc_w in the range of 2.5-4 cm.
+The box plot of sc_w indicates that all price ranges have the same median equal 1.5 cm.
+
+
+**Bivariate Analysis**
+
+-Clock Speed 
+
+```{r}
+library(ggplot2)
+
+# Clock speed based on price range
+ggplot(data, aes(x = factor(clock_speed), fill = factor(price_range))) +
+  geom_bar(position = "dodge") +
+  labs(x = "Clock Speed", y = "Count", fill = "Price Range") +
+  theme_minimal() +
+  theme(text = element_text(size = 14))
+
+
+```
+
+
+Observations: The above chart illustrates that the phones with a clock_speed of
+0.5 contains the highest count among all mobile phones.
+
+
+**Front Camera (Megapixels):**
+
+```{r}
+library(ggplot2)
+
+# fc based on price range
+ggplot(data, aes(x = factor(fc), fill = factor(price_range))) +
+  geom_bar(position = "dodge") +
+  labs(x = "Front Camera (fc)", y = "Count", fill = "Price Range") +
+  theme_minimal() +
+  theme(text = element_text(size = 14))
+
+
+```
+
+Observations: The above chart illustrates that with the increase in the value of
+fc from 0-19, their count will decrease. This indicates that as the front camera
+becomes more powerful, the number of phones decreases.
+
+
+**Internal Memory (Gigabytes):**
+
+```{r}
+library(ggplot2)
+
+# Count of int_memory
+ggplot(data, aes(x = factor(int_memory))) +
+  geom_bar(fill = "#5A9", color = "black") +
+  labs(x = "Internal Memory (int_memory)", y = "Count") +
+  theme_minimal() +
+  theme(text = element_text(size = 14))
+
+
+```
+
+
+Observations: Mobile phones with 27 gigabytes of int_memory with the value of 64
+have the highest count among all phones.
+
+
+**Mobile Depth (Cm):**
+
+```{r}
+library(ggplot2)
+
+# m_dep based on price_range
+ggplot(data, aes(x = factor(m_dep), fill = factor(price_range))) +
+  geom_bar(position = "dodge") +
+  labs(x = "m_dep", y = "Count", fill = "Price Range") +
+  theme_minimal() +
+  theme(text = element_text(size = 14))
+
+```
+
+Observations:
+Mobile phones with 0.5 cm of m_dep have the highest count among all phones.
+
+**Primary Camera (Megapixels):**
+
+```{r}
+
+library(ggplot2)
+
+# pc based on price_range
+ggplot(data, aes(x = factor(pc), fill = factor(price_range))) +
+  geom_bar(position = "dodge") +
+  labs(x = "pc", y = "Count", fill = "Price Range") +
+  theme_minimal() +
+  theme(text = element_text(size = 14))
+
+```
+
+
+Observations: In general, mobile phones with 5 Megapixels of pc have the lowest
+count among all phones.
+
+**Screen Height (Cm):**
+
+
+```{r}
+library(ggplot2)
+
+# sc_h based on price_range
+ggplot(data, aes(x = factor(sc_h), fill = factor(price_range))) +
+  geom_bar(position = "dodge") +
+  labs(x = "Screen Height (sc_h)", y = "Count", fill = "Price Range") +
+  theme_minimal() +
+  theme(text = element_text(size = 14))
+
+
+```
+
+Observations: In general, mobile phones with 17 Cm of sc_h have the highest
+count among all phones.
+
+**Screen Width (Cm):**
+
+```{r}
+library(ggplot2)
+
+# sc_w based on price_range
+ggplot(data, aes(x = factor(sc_w), fill = factor(price_range))) +
+  geom_bar(position = "dodge") +
+  labs(x = "Screen Width (sc_w)", y = "Count", fill = "Price Range") +
+  theme_minimal() +
+  theme(text = element_text(size = 14))
+
+
+```
+
+Observations: The above chart demonstrates that with the increase in the value
+of sc_w from 2.54-18, their count will decrease. This indicates that as the
+Screen Width becomes bigger, the number of phones decreases. In general, mobile
+phones with 2.54 cm or 1-inch of sc_w have the highest count among all phones.
+
+**Talk Time:**
+
+```{r}
+
+library(ggplot2)
+
+# talk_time based on price_range
+ggplot(data, aes(x = factor(talk_time), fill = factor(price_range))) +
+  geom_bar(position = "dodge") +
+  labs(x = "Talk Time", y = "Count", fill = "Price Range") +
+  theme_minimal() +
+  theme(text = element_text(size = 14))
+
+```
+
+Observations: The range of talk_time varies from 2 to 20. Mobile phones with
+talk_time 4 with a Low-cost price range have the highest count among all phones.
+
+
+**Ram (Megabytes):**
+
+```{r}
+library(ggplot2)
+
+# Create scatter plot
+ggplot(data, aes(x = ram, y = price_range, color = factor(price_range))) +
+  geom_point() +
+  scale_color_brewer(palette = "Set2") +  # Adjust the palette as needed
+  labs(x = "RAM", y = "Price Range", color = "Price Range") +
+  theme_minimal() +
+  theme(text = element_text(size = 10))
+
+
+```
+
+
+Observations: By increasing the value of ram from 256-4000 megabytes, the price
+range will increase.
+
+
+**Mean of 'Price range' per each unique value of different categorical features:**
+
+
+```{r}
+
+library(ggplot2)
+library(dplyr)
+
+# Plot for Bluetooth
+bluetooth_plot <- data %>%
+  group_by(blue) %>%
+  summarise(mean_price = mean(price_range)) %>%
+  ggplot(aes(x = factor(blue), y = mean_price, fill = factor(blue))) +
+  geom_bar(stat = "identity", color = "black", fill = "#9bbf8a") +
+  geom_text(aes(label = round(mean_price, 2)), vjust = -0.3) +
+  labs(title = "Mean of Price range per Bluetooth (0: No, 1: Yes)", x = "Bluetooth", y = "Mean Price Range") +
+  theme_minimal() +
+  theme(legend.position = "none")
+
+# Plot for Dual SIM
+dual_sim_plot <- data %>%
+  group_by(dual_sim) %>%
+  summarise(mean_price = mean(price_range)) %>%
+  ggplot(aes(x = factor(dual_sim), y = mean_price, fill = factor(dual_sim))) +
+  geom_bar(stat = "identity", color = "black", fill = "#99b49a") +
+  geom_text(aes(label = round(mean_price, 2)), vjust = -0.3) +
+  labs(title = "Mean of Price range per Dual SIM (0: No, 1: Yes)", x = "Dual SIM", y = "Mean Price Range") +
+  theme_minimal() +
+  theme(legend.position = "none")
+
+# Arrange side by side
+library(gridExtra)
+grid.arrange(bluetooth_plot, dual_sim_plot, ncol = 2)
+
+```
+
+```{r}
+
+library(ggplot2)
+library(dplyr)
+library(gridExtra)
+
+# Plot for 4G
+four_g_plot <- data %>%
+  group_by(four_g) %>%
+  summarise(mean_price = mean(price_range)) %>%
+  ggplot(aes(x = factor(four_g), y = mean_price, fill = factor(four_g))) +
+  geom_bar(stat = "identity", color = "black", fill = "#869d84") +
+  geom_text(aes(label = round(mean_price, 2)), vjust = -0.3) +
+  labs(title = "Mean of Price range per 4G (0: No, 1: Yes)", x = "4G", y = "Mean Price Range") +
+  theme_minimal() +
+  theme(legend.position = "none")
+
+# Plot for Number of Cores
+n_cores_plot <- data %>%
+  group_by(n_cores) %>%
+  summarise(mean_price = mean(price_range)) %>%
+  ggplot(aes(x = factor(n_cores), y = mean_price, fill = factor(n_cores))) +
+  geom_bar(stat = "identity", color = "black", fill = "#8d9d9b") +
+  geom_text(aes(label = round(mean_price, 2)), vjust = -0.3) +
+  labs(title = "Mean of Price range per Number of cores", x = "Number of Cores", y = "Mean Price Range") +
+  theme_minimal() +
+  theme(legend.position = "none")
+
+# Arrange side by side
+grid.arrange(four_g_plot, n_cores_plot, ncol = 2)
+
+```
+```{r}
+library(ggplot2)
+library(dplyr)
+library(gridExtra)
+
+# Plot for 3G
+three_g_plot <- data %>%
+  group_by(three_g) %>%
+  summarise(mean_price = mean(price_range)) %>%
+  ggplot(aes(x = factor(three_g), y = mean_price, fill = factor(three_g))) +
+  geom_bar(stat = "identity", color = "black", fill = "#58a29d") +
+  geom_text(aes(label = round(mean_price, 2)), vjust = -0.3) +
+  labs(title = "Mean of Price range per 3G (0: No, 1: Yes)", x = "3G", y = "Mean Price Range") +
+  theme_minimal() +
+  theme(legend.position = "none")
+
+# Plot for Touch Screen
+touch_screen_plot <- data %>%
+  group_by(touch_screen) %>%
+  summarise(mean_price = mean(price_range)) %>%
+  ggplot(aes(x = factor(touch_screen), y = mean_price, fill = factor(touch_screen))) +
+  geom_bar(stat = "identity", color = "black", fill = "#849d9b") +
+  geom_text(aes(label = round(mean_price, 2)), vjust = -0.3) +
+  labs(title = "Mean of Price range per Touch Screen (0: No, 1: Yes)", x = "Touch Screen", y = "Mean Price Range") +
+  theme_minimal() +
+  theme(legend.position = "none")
+
+# Arrange side by side
+grid.arrange(three_g_plot, touch_screen_plot, ncol = 2)
+
+
+```
+
+
+```{r}
+library(ggplot2)
+library(dplyr)
+
+# Group by wifi and calculate mean of price_range
+wifi_mean <- data %>%
+  group_by(wifi) %>%
+  summarise(mean_price = mean(price_range))
+
+# Plot
+ggplot(wifi_mean, aes(x = factor(wifi), y = mean_price, fill = factor(wifi))) +
+  geom_bar(stat = "identity", color = "black", fill = "#254441", width = 0.5) +
+  geom_text(aes(label = round(mean_price, 2)), vjust = -0.3) +
+  labs(title = "Mean of Price range per Wifi (0: No, 1: Yes)", 
+       x = "Wifi", y = "Price range") +
+  theme_minimal() +
+  theme(legend.position = "none", axis.text.x = element_text(angle = 0, hjust = 0.5))
+
+```
+
+Observations: The Mean of Price range per Number of cores shows that mobile
+phones with 5 cores have the highest mean of the price range.
+
+
+**Correlation**
+
+Our target is Price Range. So, we should check how each attribute correlates with the Price Range variable. We can do it as follows:
+
+```{r, fig.width=32, fig.height=16}
+library(ggplot2)
+library(corrplot)
+
+# Calculate correlation matrix
+cor_matrix <- cor(data)
+
+# Extract correlations with price_range and sort
+price_corr <- cor_matrix[, "price_range", drop = FALSE]
+price_corr <- price_corr[order(-price_corr[, "price_range"]), , drop = FALSE]
+
+# Plot heatmap
+corrplot(price_corr, method = "color", 
+         col = colorRampPalette(c("darkblue", "white", "darkgreen"))(200),
+         tl.col = "black", tl.srt = 45, 
+         title = "Features Correlating with Price Range",
+         mar = c(0, 0, 1, 0))
+
+
+```
+
+Interpretation: 
+The correlation coefficient ranges from -1 to +1. When it is
+close to +1, this signifies that there is a strong positive correlation. So, we
+can see that there is a positive correlation between Price Range and ram, Price
+Range and battery_power, and Price Range and px_width. When it is close to -1,
+it means that there is a strong negative correlation. When it is close to 0, it
+means that there is no correlation. We can see that most of the variables except
+clock_speed, mobile_wt and touch_screen are positively correlated with the
+target.
+
+**Correlation Between The Features**
+
+```{r, fig.width=24}
+library(ggplot2)
+library(corrplot)
+
+# Calculate correlation matrix
+cor_matrix <- cor(data)
+
+# Plot heatmap
+corrplot(cor_matrix, method = "color", col = colorRampPalette(c("darkblue", "white", "darkgreen"))(200),
+         tl.col = "black", tl.srt = 90, addCoef.col = "black", number.cex = 0.7,
+         title = "Correlation Between The Features", mar = c(0, 0, 2, 0))
+
+
+```
+
+Interpretation:
+There is a strong correlation between ram and price_range. In
+addition, the heatmap above indicates a moderate correlation between 4G and 3G,
+fc and pc, px_height and px_width, and sc_h and sc_w.
+
+## Model Building
+
+**Min-max normalization**
+
+```{r}
+
+# Formula
+normalize <- function(x) {
+  return((x - min(x)) / (max(x) - min(x)))
+}
+
+# Normalize relevant numerical columns in the mobile features dataset
+data[, c("battery_power", "clock_speed", "fc", "int_memory", "m_dep", 
+         "mobile_wt", "n_cores", "pc", "px_height", "px_width", 
+         "ram", "sc_h", "sc_w", "talk_time")] <- 
+  apply(data[, c("battery_power", "clock_speed", "fc", "int_memory", "m_dep", 
+                 "mobile_wt", "n_cores", "pc", "px_height", "px_width", 
+                 "ram", "sc_h", "sc_w", "talk_time")], 2, normalize)
+
+# Show first rows
+head(data)
+
+```
+All the rows has been normalized
+
+## KNN Modelling
+
+
+**Split the data into training and testing sets:**
+**Train KNN**
+
+
+```{r}
+# Polynomial Features (up to degree 2)
+data$ram_squared <- data$ram^2
+data$battery_power_squared <- data$battery_power^2
+
+# Interaction Terms
+data$ram_battery_interaction <- data$ram * data$battery_power
+data$screen_area <- data$px_height * data$px_width
+
+# Scale the new features along with the original ones
+scaled_data <- scale(data[, -ncol(data)])  # Exclude price_range if it's the last column
+labels <- data$price_range
+
+# Train/Test Split
+set.seed(42)
+train_idx <- sample(1:nrow(data), 0.8 * nrow(data))
+train_features <- scaled_data[train_idx, ]
+test_features <- scaled_data[-train_idx, ]
+train_labels <- labels[train_idx]
+test_labels <- labels[-train_idx]
+
+# Train KNN with new features
+library(class)
+k_value <- 41
+knn_pred <- knn(train = train_features, 
+                test = test_features, 
+                cl = train_labels, 
+                k = k_value)
+
+# Evaluate
+library(caret)
+# Ensure labels and predictions are factors with the same levels
+knn_pred <- factor(knn_pred, levels = levels(factor(train_labels)))
+test_labels <- factor(test_labels, levels = levels(factor(train_labels)))
+
+# Evaluate performance
+conf_matrix <- confusionMatrix(knn_pred, test_labels)
+print(conf_matrix)
+
+```
+##Evaluation
+
+**COnfusion Matrix**
+
+```{r}
+# Load necessary libraries
+library(caret)
+library(ggplot2)
+
+# Create the confusion matrix
+conf_matrix <- confusionMatrix(knn_pred, test_labels)
+
+# Extract the matrix
+cm_table <- as.data.frame(conf_matrix$table)
+colnames(cm_table) <- c("Prediction", "Reference", "Freq")
+
+# Plot the confusion matrix
+ggplot(cm_table, aes(x = Reference, y = Prediction, fill = Freq)) +
+  geom_tile(color = "black") +
+  geom_text(aes(label = Freq), color = "white", size = 5) +
+  scale_fill_gradient(low = "lightblue", high = "darkblue") +
+  labs(title = "Confusion Matrix", x = "Actual", y = "Predicted") +
+  theme_minimal()
+
+
+```
+
+
+**Model Metrics**
+
+```{r}
+# Load required libraries
+library(caret)
+library(knitr)
+
+# Compute confusion matrix
+conf_matrix <- confusionMatrix(knn_pred, test_labels)
+
+# Extract values from the confusion matrix
+cm_table <- conf_matrix$table
+
+# Calculate overall metrics
+accuracy <- conf_matrix$overall['Accuracy']
+kappa <- conf_matrix$overall['Kappa']
+
+# Calculate per-class metrics
+class_metrics <- data.frame(
+  Class = levels(test_labels),
+  Sensitivity = conf_matrix$byClass[, "Sensitivity"],
+  Specificity = conf_matrix$byClass[, "Specificity"],
+  Precision = conf_matrix$byClass[, "Pos Pred Value"],
+  Recall = conf_matrix$byClass[, "Sensitivity"],
+  F1_Score = 2 * (conf_matrix$byClass[, "Pos Pred Value"] * conf_matrix$byClass[, "Sensitivity"]) /
+               (conf_matrix$byClass[, "Pos Pred Value"] + conf_matrix$byClass[, "Sensitivity"])
+)
+
+# Add overall metrics
+overall_metrics <- data.frame(
+  Metric = c("Accuracy", "Kappa"),
+  Value = c(accuracy, kappa)
+)
+
+# Display metrics
+cat("## Overall Performance Metrics\n")
+print(kable(overall_metrics, format = "markdown", digits = 4))
+
+cat("\n## Per-Class Performance Metrics\n")
+print(kable(class_metrics, format = "markdown", digits = 4))
+
+
+```
+
+ 
+Kappa: 0.8634 — Indicates strong
+agreement between predicted and actual classes. 
+Class-wise performance: 
+Class 0:
+Sensitivity is 0.9792, meaning it correctly identifies 97.92% of class 0 cases.
+Class 1: Sensitivity is 0.7745, which is slightly lower, meaning some class 1
+cases are misclassified. 
+Class 2: Improved to 0.9100 sensitivity, showing good
+performance. 
+Class 3: Sensitivity is 0.9314, meaning it correctly identifies
+93.14% of class 3 cases.
+
+## Conclusion
+
+
+**Conclusion: KNN Model Performance Analysis**
+
+The KNN model achieved **89.75%** accuracy, demonstrating strong multi-class classification capability. Its high balanced accuracy indicates robustness against class imbalances.
+
+Key metrics include:
+- **Sensitivity**: 77.45%-97.92% (strongest for Classes 0 and 3)
+- **Specificity**: Consistently high, peaking at 99.33% for Class 3
+- **Precision**: 85.05%-97.94% (strongest for Classes 0 and 3)
+- **Kappa**: 0.8634, showing strong prediction reliability
+
+
+

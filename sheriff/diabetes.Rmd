@@ -1,0 +1,507 @@
+---
+title: "Diabetes_analysis"
+author: "Sherifdeen Abubakr Gbolagade (CST/19/COM/00258)"
+date: "2025-03-16"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+```
+
+## About Diabetes Dataset
+The Diabetes Diagnosis Dataset consists of 9,538 medical records, capturing key
+health parameters, lifestyle habits, and genetic predispositions influencing
+diabetes risk. The dataset includes 17 features, such as blood glucose levels,
+BMI, cholesterol levels, and hypertension status, providing a comprehensive view
+of diabetes risk factors. It is structured with realistic distributions, making
+it valuable for medical research, statistical analysis, and machine learning
+applications
+
+
+##Load Data and Libraries
+
+**Load necessary libraries:**
+
+```{r}
+
+library(class) # For KNN
+library(caret) # For data splitting and evaluation
+library(ggplot2)  # For visualization
+
+```
+
+**Load the dataset:**
+
+```{r}
+data <- read.csv("diabetes_dataset.csv")
+str(data)  # Check the structure
+
+```
+
+The dataset contains various health metrics and demographic information that are
+commonly used in diabetes research or prediction models:
+Age: Patient's age in years Pregnancies: Number of times pregnant (for female
+patients) BMI: Body Mass Index, a measure of body fat based on height and weight
+Glucose: Blood glucose level BloodPressure: Diastolic blood pressure measurement
+HbA1c: Glycated hemoglobin, a measure of average blood glucose levels over 2-3
+months LDL: Low-density lipoprotein cholesterol ("bad" cholesterol) HDL:
+High-density lipoprotein cholesterol ("good" cholesterol) Triglycerides: Type of
+fat in the blood WaistCircumference: Measurement around the waist in cm
+HipCircumference: Measurement around the hips in cm WHR: Waist-to-hip ratio
+(waist measurement divided by hip measurement) FamilyHistory: Binary indicator
+(0/1) for family history of diabetes DietType: Binary indicator (0/1) for diet
+classification (possibly regular/special diet) Hypertension: Binary indicator
+(0/1) for presence of hypertension MedicationUse: Binary indicator (0/1) for use
+of medications Outcome: Binary indicator (0/1) which likely represents diabetes
+diagnosis (target variable)
+
+**Dataset Summary**
+
+```{r}
+summary(data)  # Basic summary
+
+```
+
+**Display Few Rows**
+
+```{r}
+
+#displays first 6 rows of the dataset
+
+head(data)
+
+```
+
+## Data Preparation
+
+
+**Check duplicate rows**
+```{r}
+# Check for duplicates based on all columns
+duplicate_row <- data[duplicated(data), ]
+
+# Print the results
+print(duplicate_row)
+
+```
+**Handle missing values:**
+
+```{r}
+# Check total missing values in the dataset
+sum(is.na(data))
+
+# Check missing values per column
+colSums(is.na(data))
+
+
+```
+
+This dataset does not have any null values, so we can move forward with exploratory data analysis.
+
+## Exploratory Data Analysis (EDA)
+
+**Visualize feature distributions:**
+
+```{r, fig.height=20, fig.width=16}
+
+# Load ggplot2 library
+library(ggplot2)
+
+# Set plot layout to 2 plots per row
+gridExtra::grid.arrange(
+  grobs = lapply(names(data), function(col) {
+    ggplot(data, aes(x = .data[[col]], fill = as.factor(Outcome))) +
+      geom_histogram(color = "black", bins = 30, alpha = 0.7) +
+      labs(title = col, fill = "Outcome") +
+      theme_minimal()
+  }),
+  ncol = 2
+)
+
+
+```
+From the summary above, some variables need to be scaled to better fit a normal distribution, which will improve the accuracy of machine learning algorithms.
+
+Age, Pregnancies, and BMI are slightly skewed, which is expected for health-related data, but scaling will help balance their impact during modeling.
+
+There are variables with potential outliers at extreme values, like Glucose, LDL, and Triglycerides. These outliers could result from data entry errors or missing values being replaced with zeros, especially in health data where a value of zero is unlikely.
+
+Some features like HbA1c and WHR show wider ranges, and transformation (e.g., log transformation) could help reduce skewness. Additionally, FamilyHistory, DietType, Hypertension, and MedicationUse are binary variables (0/1), so they don’t need scaling but should be checked for class balance.
+
+**Diabetes Outcome Distribution**
+
+```{r}
+
+
+ggplot(data, aes(x = factor(Outcome), fill = factor(Outcome))) +
+  geom_bar(alpha = 0.7) +
+  theme_minimal() +
+  ggtitle("Diabetes Outcome Distribution") +
+  scale_fill_manual(values = c("steelblue", "chocolate"), labels = c("No Diabetes", "Diabetes")) +
+  labs(x = "Outcome", y = "Count", fill = "Diabetes Status")
+
+
+```
+The diabetes outcome is imbalanced, with more cases of "No Diabetes" than "Diabetes." This imbalance could affect model performance, causing it to favor the majority class. Techniques like resampling or using balanced metrics will help address this.
+
+
+**Glucose vs. Outcome**
+
+```{r}
+ggplot(data, aes(x = factor(Outcome), y = Glucose, fill = factor(Outcome))) +
+  geom_boxplot(alpha = 0.7) +
+  theme_minimal() +
+  ggtitle("Glucose Levels by Outcome") +
+  labs(x = "Outcome", y = "Glucose", fill = "Diabetes Status")
+```
+Diabetic individuals tend to have higher glucose levels on average, with greater variability and more extreme values.
+
+**BMI vs. Outcome**
+
+```{r}
+ggplot(data, aes(x = factor(Outcome), y = BMI, fill = factor(Outcome))) +
+  geom_violin(alpha = 0.7) +
+  theme_minimal() +
+  ggtitle("BMI Distribution by Outcome") +
+  labs(x = "Outcome", y = "BMI", fill = "Diabetes Status")
+
+```
+
+Both groups show a similar BMI distribution, suggesting BMI alone might not be a strong differentiator between diabetic and non-diabetic individuals. However, diabetic individuals tend to have slightly more variation in BMI.
+
+**Age Distribution**
+
+```{r}
+ggplot(data, aes(x = Age, fill = factor(Outcome))) +
+  geom_histogram(bins = 30, alpha = 0.7, position = "dodge") +
+  theme_minimal() +
+  ggtitle("Age Distribution by Outcome") +
+  labs(x = "Age", y = "Count", fill = "Diabetes Status")
+  
+```
+The distribution is fairly consistent across ages, with slightly higher diabetic counts in older age groups. This aligns with the fact that age is a risk factor for diabetes.
+
+**Blood Pressure vs. Outcome**
+
+```{r}
+ggplot(data, aes(x = factor(Outcome), y = BloodPressure, fill = factor(Outcome))) +
+  geom_boxplot(alpha = 0.7) +
+  theme_minimal() +
+  ggtitle("Blood Pressure by Outcome") +
+  labs(x = "Outcome", y = "Blood Pressure", fill = "Diabetes Status")
+
+```
+Both groups have several outliers at the higher end, suggesting some individuals have significantly elevated blood pressure.
+Diabetic individuals tend to have higher blood pressure, though the difference isn't drastic. This aligns with the known association between hypertension and diabetes.
+
+**Correlation Plot (Pairs Plot)**
+
+```{r, fig.height=20, fig.width=20}
+
+library(reshape2)
+library(corrplot)
+
+# Create and plot correlation matrix for numeric columns only
+numeric_cols <- sapply(data, is.numeric)
+corr_matrix <- cor(data[, numeric_cols], use = "complete.obs")
+
+# Plot correlation matrix
+corrplot(corr_matrix, method = "color", type = "upper", 
+         addCoef.col = "black", number.cex = 0.7,
+         tl.col = "black", tl.srt = 45,
+         col = colorRampPalette(c("blue", "lightblue", "red"))(200),
+         title = "Diabetes Data Correlation Heatmap")
+
+
+```
+Glucose and HbA1c show a relatively high positive correlation, suggesting that higher glucose levels are associated with increased HbA1c, a known indicator of blood sugar control.
+Waist Circumference and WHR (Waist-to-Hip Ratio) are strongly correlated, as expected, given their relationship in measuring body fat distribution.
+Outcome has moderate correlations with features like Glucose, HbA1c, and Waist Circumference, indicating these may be important predictors of diabetes.
+Some features, like HDL and DietType, show very low or near-zero correlation with the outcome, suggesting they might not be as relevant for prediction.
+
+
+**Outliers**
+
+```{r}
+# Visualize outliers with boxplots
+boxplot(data[, -ncol(data)], main = "Boxplot of Features", las = 2)
+
+# Remove outliers using Interquartile Range (IQR)
+remove_outliers <- function(x) {
+  Q1 <- quantile(x, 0.25)
+  Q3 <- quantile(x, 0.75)
+  IQR <- Q3 - Q1
+  x[x < (Q1 - 1.5 * IQR) | x > (Q3 + 1.5 * IQR)] <- NA
+  return(x)
+}
+
+data_no_outliers <- as.data.frame(lapply(data[, -ncol(data)], remove_outliers))
+data_no_outliers <- na.omit(data_no_outliers)
+
+
+```
+Age: The age distribution is fairly spread, with a few outliers at the higher
+end. Pregnancies: Most values are low, but some outliers indicate higher
+pregnancy counts. BMI: BMI has a compact distribution, with a few outliers above
+the upper quartile. Glucose: The glucose levels show a wider spread, with
+several outliers, indicating possible cases of high blood sugar. Blood Pressure:
+Generally consistent, though a few outliers show very high pressure. HbA1c: This
+has several outliers, indicating abnormal blood sugar levels over time. LDL and
+HDL: LDL (bad cholesterol) and HDL (good cholesterol) show many outliers,
+suggesting varying cholesterol levels in the population. Triglycerides: Very
+high spread with many outliers, indicating abnormal fat levels in some cases.
+Circumference and WHR: These features show moderate spread with some outliers.
+FamilyHistory, DietType, Hypertension, MedicationUse: These seem more binary or
+categorical, with limited spread and only a few outliers.
+
+
+**Cap Outliers**
+
+```{r}
+# Cap outliers at 5th and 95th percentile
+cap_outliers <- function(x) {
+  lower_bound <- quantile(x, 0.05, na.rm = TRUE)
+  upper_bound <- quantile(x, 0.95, na.rm = TRUE)
+  x[x < lower_bound] <- lower_bound
+  x[x > upper_bound] <- upper_bound
+  return(x)
+}
+
+# Apply to all numeric columns in the dataset
+data <- data.frame(lapply(data, function(x) {
+  if (is.numeric(x)) cap_outliers(x) else x
+}))
+
+# Verify the changes
+summary(data)
+
+
+```
+
+**Plot the boxplot after outlier removal**
+```{r}
+boxplot(data,
+        main = "Boxplot of Features (Outliers Removed)",
+        col = "lightblue",
+        las = 2)
+
+```
+Outliers have clearly been removed
+
+**Histogram for each feature**
+
+```{r, warning=FALSE}
+# Load necessary libraries
+library(ggplot2)
+library(tidyr)
+
+# Convert data to long format for plotting
+data_long <- data %>%
+  pivot_longer(cols = everything(), names_to = "Variable", values_to = "Value")
+
+# Plot histograms with density for each feature
+ggplot(data_long, aes(x = Value)) +
+  geom_histogram(aes(y = after_stat(density)), fill = "orange", color = "black", bins = 30) +
+  geom_density(color = "black") +
+  facet_wrap(~Variable, scales = "free") +
+  theme_minimal() +
+  labs(title = "Distribution of Diabetes Dataset Features", x = "Value", y = "Density")
+
+
+```
+
+
+The distributions show a mix of patterns: some features like **BloodPressure**, **BMI**, and **WHR** have roughly normal distributions, while others like **DietType** and **MedicationUse** are skewed. A few features, such as **LDL** and **Glucose**, display bimodal trends, hinting at possible subgroups.
+
+## Feature Scaling (Normalization)
+
+**Min-max normalization**
+```{r}
+
+
+# Formula
+normalize <- function(x) {
+  return((x - min(x)) / (max(x) - min(x)))
+}
+
+# Normalize relevant numerical columns in the diabetes dataset
+data[, c("Age", "BloodPressure", "BMI", "Glucose", "HbA1c", "HDL", 
+         "HipCircumference", "LDL", "Pregnancies", "Triglycerides", 
+         "WaistCircumference", "WHR")] <- 
+  apply(data[, c("Age", "BloodPressure", "BMI", "Glucose", "HbA1c", "HDL", 
+                 "HipCircumference", "LDL", "Pregnancies", "Triglycerides", 
+                 "WaistCircumference", "WHR")], 2, normalize)
+
+# Show first rows
+head(data)
+
+
+```
+All the rows has been normalized
+
+**Drop Hypertension**
+
+```{r}
+
+# Drop Hypertension column
+data <- data[, !(names(data) == "Hypertension")]
+
+colnames(data)
+
+```
+Dropping the 'Hypertension' column because it contains only 0 values, making it uninformative.
+
+```{r}
+library(themis)
+library(recipes)
+
+# Convert relevant columns to factors or integers
+
+data$Outcome <- factor(data$Outcome)
+
+# Apply SMOTE
+rec <- recipe(Outcome ~ ., data = data) %>%
+  step_smote(Outcome, over_ratio = 1) %>%
+  prep() %>%
+  bake(new_data = NULL)
+
+# Check the class distribution after SMOTE
+table(rec$Outcome)
+
+# Update the original dataset with the balanced data
+data <- rec
+
+
+```
+**Check class distribution**
+
+```{r}
+# Load ggplot2
+library(ggplot2)
+
+# Plot Outcome distribution after SMOTE
+ggplot(data, aes(x = factor(Outcome), fill = factor(Outcome))) +
+  geom_bar(alpha = 0.7) +
+  theme_minimal() +
+  ggtitle("Diabetes Outcome Distribution") +
+  scale_fill_manual(values = c("steelblue", "chocolate"), labels = c("No Diabetes", "Diabetes")) +
+  labs(x = "Outcome", fill = "Status")
+
+
+
+```
+
+It is balanced
+
+
+## KNN Modelling
+
+**Split the data into training and testing sets:**
+**Train KNN**
+
+```{r}
+# Load necessary libraries
+library(class)  # For KNN
+library(caret)  # For evaluation
+
+# Set seed for reproducibility
+set.seed(42)
+
+# Scale features (standardize) and split labels
+scaled_data <- scale(data[, -ncol(data)])  # Assuming Outcome is the last column
+labels <- data$Outcome
+
+# Split data into train and test (80/20 split)
+train_idx <- sample(1:nrow(data), 0.8 * nrow(data))
+train_features <- scaled_data[train_idx, ]
+test_features <- scaled_data[-train_idx, ]
+train_labels <- labels[train_idx]
+test_labels <- labels[-train_idx]
+
+# Train KNN model and make predictions
+k_value <- 12
+knn_pred <- knn(train = train_features, 
+                test = test_features, 
+                cl = train_labels, 
+                k = k_value)
+
+# Evaluate performance
+conf_matrix <- confusionMatrix(knn_pred, test_labels)
+print(conf_matrix)
+
+
+```
+
+**Confusion Matrix**
+
+```{r}
+
+# Load necessary libraries
+library(ggplot2)
+library(caret)
+
+# Compute confusion matrix
+conf_matrix <- confusionMatrix(knn_pred, test_labels)
+
+# Extract confusion matrix as a data frame
+cm_data <- as.data.frame(conf_matrix$table)
+colnames(cm_data) <- c("Prediction", "Reference", "Count")
+
+# Plot confusion matrix
+ggplot(cm_data, aes(x = Reference, y = Prediction, fill = Count)) +
+  geom_tile(color = "white") +
+  geom_text(aes(label = Count), color = "black", size = 5) +
+  scale_fill_gradient(low = "lightblue", high = "steelblue") +
+  labs(title = "Confusion Matrix", x = "Actual", y = "Predicted") +
+  theme_minimal()
+
+```
+The KNN model shows excellent performance with an **accuracy of 97.64%**. The **Kappa value of 0.9528** indicates strong agreement between predictions and actual outcomes. The **low false positives (33)** and **false negatives (26)** suggest the model balances both classes well. The **P-value < 2e-16** confirms the accuracy is significantly better than random guessing.
+
+**Model Metrics**
+
+```{r}
+# Load required libraries
+library(caret)
+library(knitr)
+
+# Compute confusion matrix
+conf_matrix <- confusionMatrix(knn_pred, test_labels)
+
+# Extract values from confusion matrix
+tp <- conf_matrix$table[2, 2]  # True Positives
+tn <- conf_matrix$table[1, 1]  # True Negatives
+fp <- conf_matrix$table[1, 2]  # False Positives
+fn <- conf_matrix$table[2, 1]  # False Negatives
+
+# Calculate metrics
+accuracy <- (tp + tn) / (tp + tn + fp + fn)
+precision <- tp / (tp + fp)
+recall <- tp / (tp + fn)
+f1_score <- 2 * (precision * recall) / (precision + recall)
+specificity <- tn / (tn + fp)
+sensitivity <- recall
+
+# Create a data frame with metrics
+metrics <- data.frame(
+  Metric = c("Accuracy", "Precision", "Recall (Sensitivity)", "F1 Score", "Specificity"),
+  Value = c(accuracy, precision, recall, f1_score, specificity)
+)
+
+# Print the table in a clean format
+kable(metrics, format = "markdown", caption = "Model Performance Metrics", digits = 4)
+
+
+```
+
+## Evaluation and Conclusion
+
+Accuracy (0.9764): The model correctly predicted outcomes 97.64% of the time, showing strong overall performance.
+Precision (0.9795): When the model predicted diabetes, it was correct 97.95% of the time, meaning few false positives.
+Recall (Sensitivity) (0.9741): The model correctly identified 97.41% of actual diabetes cases, minimizing false negatives.
+F1 Score (0.9768): The harmonic mean of precision and recall is 97.68%, indicating a good balance between the two.
+Specificity (0.9788): The model correctly identified 97.88% of non-diabetic cases, meaning it effectively avoids false positives.
+
+
+

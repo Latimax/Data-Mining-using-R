@@ -1,0 +1,109 @@
+---
+title: "Lab Exercise One"
+author: "Shaibu Abdullateef Topa"
+date: "2025-02-03"
+output: html_document
+---
+
+##Lab Exercise 1
+power of all numbers between -8 and 13
+
+```{r}
+numbers <- c(-8:13)
+power_of_numbers <- numbers ^ 2
+power_of_numbers
+```
+##Lab Exercise 2
+Data Frame for courses
+```{r}
+course <-  c("Data Science", "Cyber Security", "IT", "Digital Media")
+module1 <- c("analysis", "ethical hacking", "databases", "3D animation")
+credits1 <- c(15,15,20,30)
+module2 <- c("project", "forensics", "java programming", "perception")
+credits2 <- c(45,15,20,12)
+courses <- data.frame(course, module1, credits1, module2, credits2)
+head(courses)
+```
+##Lab Exercise 3
+Extend courses with a row with the following information
+```{r}
+newrow <- data.frame("Networks", "CISCO CCNA", 25, "Operating systems", 40)
+names(newrow) <- names(courses)
+courses <- rbind(courses, newrow)
+head(courses)
+```
+##Lab Exercise 4
+Extend courses with a column total which contains the total number of credits for a course.
+```{r}
+courses$total <- courses$credits1 + courses$credits2
+head(courses)
+```
+##Lab Exercise 5
+Extend courses with a column pgcert which is true if the total is at least 60 credits
+```{r}
+courses$pgcert <- courses$total >= 60
+head(courses)
+```
+
+##Lab Exercise 6
+Create a data frame with details of all the courses where at least one module is 20 credits or more
+```{r}
+twentyplus <- subset(courses, courses$credits1>=20 | courses$credits2>=20)
+head(twentyplus)
+
+```
+##Lab Exercise 7
+Create a data frame with details of all the courses which do NOT have databases.
+```{r}
+noDBs <- subset(courses, courses$module1 != "databases" & courses$module2 != "databases")
+head(noDBs)
+```
+##Lab Exercise 8
+Load and read ContactLens.csv
+```{r}
+lens <- read.csv("ContactLens.csv")
+lens
+```
+##Lab Exercise 9
+Show the first 4 rows of the lenses data frame.
+```{r}
+head(lens, 4)
+```
+##Lab Exercise 10
+Show the last 3 rows of the lenses data frame.
+```{r}
+tail(lens, 3)
+```
+##Lab Exercise 11
+Check the types of data lenses contains. Does it have any missing values?
+```{r}
+summary(lens)
+```
+##Lab Exercise 12
+Assign the 3rd instance of lenses age column value pre-presbyopic.
+```{r}
+lens[3,1] <- "pre-presbyopic"
+head(lens)
+```
+##Lab Exercise 13
+Remove column tearproductionRate
+```{r}
+lens$TearProdRate <- NULL
+head(lens)
+```
+##Lab Exercise 14
+Rename column contactLenses to recommendation.
+```{r}
+colnames(lens)[colnames(lens)=="ContactLens"] <- "recommendation"
+head(lens)
+```
+##Lab Exercise 15
+Produce a version of lenses where astigmatism is  numeric (1 if it is a yes and 0 if it has value no) 
+```{r}
+lens$Astigmatism[lens$Astigmatism == "yes"] <- 1 
+lens$Astigmatism[lens$Astigmatism == "no"] <- 0
+lens
+```
+
+
+

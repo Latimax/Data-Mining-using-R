@@ -1,0 +1,230 @@
+---
+title: "Loan Approval"
+author: "Shaibu Abdullateef Topa"
+regno: "CST/20/COM/00591"
+date: "2025-02-12"
+output: word_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+#Load and inspect the dataset
+```{r}
+# Load data manipulation library
+library(dplyr)
+
+# Read the loan dataset (same folder as this R script)
+loan_data <- read.csv("loan_data.csv")
+
+# Show first few rows
+head(loan_data)
+
+```
+#Summary of dataset
+```{r}
+# Check dataset structure
+str(loan_data)
+
+# Summary statistics of the loan dataset
+summary(loan_data)
+```
+#Handle Missing Values (if any)
+```{r}
+# Count missing values in each column
+colSums(is.na(loan_data))
+```
+
+#Convert Categorical Variables - Since KNN works best with numerical data, convert categorical variables into factors.
+```{r}
+loan_data$person_gender <- as.factor(loan_data$person_gender)
+
+loan_data$person_education <- as.factor(loan_data$person_education)
+
+loan_data$person_home_ownership <- as.factor(loan_data$person_home_ownership)
+
+loan_data$loan_intent <- as.factor(loan_data$loan_intent)
+
+loan_data$previous_loan_defaults_on_file <- as.factor(loan_data$previous_loan_defaults_on_file)
+
+```
+
+
+#Normalize Numerical Features
+```{r}
+#Formula
+normalize <- function(x) {
+  return((x - min(x)) / (max(x) - min(x)))
+}
+
+# Normalize relevant numerical columns
+loan_data[, c("person_age", "person_income", "person_emp_exp", "loan_amnt", 
+              "loan_int_rate", "loan_percent_income", "cb_person_cred_hist_length", "credit_score")] <- 
+  apply(loan_data[, c("person_age", "person_income", "person_emp_exp", "loan_amnt", 
+                      "loan_int_rate", "loan_percent_income", "cb_person_cred_hist_length", "credit_score")], 
+        2, normalize)
+
+```
+
+#Verify Data to ensure that it is Ready
+```{r}
+# Check the data again
+str(loan_data)
+
+# Check if categorical variables are converted
+table(loan_data$loan_status)  # Class distribution
+
+```
+#Exploratory Data Analysis - This helps me understand the distribution of values and detect any imbalances or potential issues.
+```{r}
+# Check structure of loan_data
+str(loan_data)
+
+# Summary statistics for numerical variables
+summary(loan_data)
+
+# Count unique values for categorical variables
+table(loan_data$loan_status)  # Class balance check
+table(loan_data$person_gender)
+table(loan_data$loan_intent)
+
+```
+#Visualizing Data Distributions - Histogram of Numeric Features
+```{r}
+library(ggplot2)
+
+# Histogram for Age
+ggplot(loan_data, aes(x=person_age)) + 
+  geom_histogram(fill="blue", bins=30, alpha=0.7) + 
+  theme_minimal() +
+  ggtitle("Distribution of Age")
+
+# Histogram for Income
+ggplot(loan_data, aes(x=person_income)) + 
+  geom_histogram(fill="green", bins=30, alpha=0.7) + 
+  theme_minimal() +
+  ggtitle("Distribution of Income")
+
+```
+
+#Checking Class Imbalance
+```{r}
+# Class distribution
+ggplot(loan_data, aes(x=factor(loan_status), fill=factor(loan_status))) + 
+  geom_bar(alpha=0.7) + 
+  theme_minimal() +
+  ggtitle("Loan Approval Distribution") +
+  scale_fill_manual(values = c("red", "green"), labels = c("Rejected", "Approved")) +
+  labs(x = "Loan Status", fill = "Status")
+
+```
+
+#KNN can be affected by imbalance because it tends to favor the majority class.
+#This means the model might predict 0 (Rejected) too often, leading to #poor recall for 1 (Approved).
+#Use ROSE (Random Over-Sampling Examples):
+```{r}
+library(ROSE)
+
+# Apply oversampling with ROSE
+loan_data_balanced <- ROSE(loan_status ~ ., data = loan_data, seed = 123)$data
+
+# Check class balance
+table(loan_data_balanced$loan_status)
+
+```
+
+
+#Verify Balance
+```{r}
+ggplot(loan_data_balanced, aes(x = factor(loan_status), fill = factor(loan_status))) +
+  geom_bar(alpha = 0.7) +
+  theme_minimal() +
+  ggtitle("Loan Approval Distribution After SMOTE") +
+  scale_fill_manual(values = c("red", "green"), labels = c("Rejected", "Approved")) +
+  labs(x = "Loan Status", fill = "Status")
+
+
+```
+
+#Feature Relationships
+#Scatter Plot of Loan Amount vs. Income
+```{r}
+ggplot(loan_data, aes(x=person_income, y=loan_amnt, color=factor(loan_status))) + 
+  geom_point(alpha=0.6) + 
+  theme_minimal() +
+  ggtitle("Income vs Loan Amount by Loan Status")
+
+```
+
+#Training the KNN Model
+#Split Data into Training & Testing Sets
+#Using Hold Out Estimation
+```{r}
+# Load required library
+library(caTools)
+
+set.seed(123)
+
+# Split the data (80% train, 20% test)
+split <- sample.split(loan_data_balanced$loan_status, SplitRatio = 0.8)
+train_data <- subset(loan_data_balanced, split == TRUE)
+test_data <- subset(loan_data_balanced, split == FALSE)
+
+# Check split result
+table(train_data$loan_status)
+table(test_data$loan_status)
+
+``` 
+#Prepare Data for KNN
+#Remove categorical variables and separate labels (target variable):
+```{r}
+# Load KNN library
+library(class)
+
+# Remove categorical columns for KNN (excluding target variable)
+train_features <- train_data[, sapply(train_data, is.numeric)]
+test_features <- test_data[, sapply(test_data, is.numeric)]
+
+# Extract target labels
+train_labels <- train_data$loan_status
+test_labels <- test_data$loan_status
+
+```
+
+#Train KNN Model
+```{r}
+# Train KNN model
+set.seed(123)
+k_value <- 5
+knn_pred <- knn(train = train_features, test = test_features, cl = train_labels, k = k_value)
+
+
+# Create confusion matrix
+library(caret)
+
+# Convert test labels and predictions to factors with same levels
+test_labels <- factor(test_labels, levels = unique(train_labels))
+knn_pred <- factor(knn_pred, levels = unique(train_labels))
+
+# Create confusion matrix
+conf_matrix <- confusionMatrix(knn_pred, test_labels)
+
+# Print results
+print(conf_matrix)
+
+
+```
+
+#Evaluate Model Performance
+```{r}
+# Check accuracy
+accuracy <- mean(knn_pred == test_labels)
+print(paste("KNN Model Accuracy:", round(accuracy * 100, 2), "%"))
+
+
+```
+```{r}
+print(conf_matrix)
+
+```

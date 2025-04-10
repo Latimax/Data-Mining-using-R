@@ -1,0 +1,774 @@
+---
+title: "Loan Approval"
+author: "Shaibu Abdullateef Topa (CST/20/COM/00591)"
+date: "2025-03-08"
+output: 
+  pdf_document:
+    keep_tex: true
+    number_sections: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+
+```
+
+
+#Load and inspect the dataset
+```{r}
+# Load data manipulation library
+library(dplyr)
+
+# Read the loan data set (same folder as this R script)
+loan_data <- read.csv("loan_approval.csv")
+
+```
+
+#Explore Dataset
+```{r}
+# Show first few rows
+head(loan_data)
+
+```
+```{r}
+# Show last few rows
+tail(loan_data)
+
+```
+```{r}
+
+#Show the dataset dimension 
+dim(loan_data)
+
+```
+
+#Summary of dataset
+```{r}
+# Check dataset structure
+str(loan_data)
+
+# Summary statistics of the loan dataset
+summary(loan_data)
+
+```
+```{r}
+# Check number of distinct values in the entire dataset
+sapply(loan_data, function(x) length(unique(x)))
+
+```
+#From the above, categorical feature :education, self_emplyed and loan_status each has 2 unique values respectively [Graduate,Not],[No,Yes],[Approved,Rejected]
+
+
+#Data Cleaning
+
+```{r}
+# Check for duplicates
+sum(duplicated(loan_data))
+```
+#Handle Missing Values (if any)
+```{r}
+# Count missing values in each column
+colSums(is.na(loan_data))
+```
+#Removed unnecessary spaces in column names and values
+```{r}
+
+names(loan_data) <- gsub(" ", "", names(loan_data))
+
+```
+
+#Outlier mining
+
+```{r}
+#Detecting Outlier by Visualization
+# Load required libraries
+library(ggplot2)
+library(gridExtra)
+
+# Create empty list to store plots
+plot_list <- list()
+
+# Create boxplot for each numeric column
+num_cols <- sapply(loan_data, is.numeric)
+numeric_data <- loan_data[, num_cols]
+
+# Create individual boxplots
+for(col in names(numeric_data)) {
+  p <- ggplot(numeric_data, aes_string(y = col)) + 
+    geom_boxplot() +
+    labs(title = col) +
+    theme_minimal()
+  
+  plot_list[[col]] <- p
+}
+
+# Calculate grid dimensions (trying to approximate 4x4 layout)
+n_plots <- length(plot_list)
+n_rows <- ceiling(sqrt(n_plots))
+n_cols <- ceiling(n_plots / n_rows)
+
+# Arrange plots in a grid and display
+grid.arrange(grobs = plot_list, nrow = n_rows, ncol = n_cols)
+
+```
+
+
+#Outliers detected in features bank_asset_value: This indicates that there are few applicants having more than 1,400,000 in their bank accounts residental_assets_value and commercial_assets_value: indicating there are few applicants having more value of residential and commercial assets 
+
+
+#Treating Outliers
+```{r}
+# Function to cap outliers
+cap_outliers <- function(df, column, method = 'IQR') {
+  if (method == 'IQR') {
+    Q1 <- quantile(df[[column]], 0.25, na.rm = TRUE)
+    Q3 <- quantile(df[[column]], 0.75, na.rm = TRUE)
+    IQR_val <- Q3 - Q1
+    lower_bound <- Q1 - 1.5 * IQR_val
+    upper_bound <- Q3 + 1.5 * IQR_val
+  } else if (method == 'zscore') {
+    mean_val <- mean(df[[column]], na.rm = TRUE)
+    std_val <- sd(df[[column]], na.rm = TRUE)
+    lower_bound <- mean_val - 3 * std_val
+    upper_bound <- mean_val + 3 * std_val
+  }
+  
+  # Cap the values using pmin/pmax (R's equivalent to np.clip)
+  df[[column]] <- pmin(pmax(df[[column]], lower_bound), upper_bound)
+  return(df)
+}
+
+# Apply to all numerical columns
+num_cols <- sapply(loan_data, is.numeric)
+for (col in names(loan_data[, num_cols])) {
+  loan_data <- cap_outliers(loan_data, col, method = 'IQR')  # or 'zscore'
+}
+
+dim(loan_data)
+
+```
+```{r}
+# Load necessary libraries
+library(ggplot2)
+library(gridExtra)
+library(ggpubr)
+
+# Boxplot
+p1 <- ggplot(loan_data, aes(y = commercial_assets_value)) +
+  geom_boxplot(fill = "skyblue") +
+  ggtitle("Boxplot") +
+  theme_minimal()
+
+# Histogram with density curve - using after_stat() instead of ..density..
+p2 <- ggplot(loan_data, aes(x = commercial_assets_value)) +
+  geom_histogram(aes(y = after_stat(density)), bins = 30, fill = "skyblue", color = "black", alpha = 0.7) +
+  geom_density(color = "red", linewidth = 1) +
+  ggtitle("Histogram with Density") +
+  theme_minimal()
+
+# Q-Q plot
+p3 <- ggplot(loan_data, aes(sample = commercial_assets_value)) +
+  stat_qq() +
+  stat_qq_line() +
+  ggtitle("Q-Q Plot") +
+  theme_minimal()
+
+# Combine all plots
+grid.arrange(p1, p2, p3, ncol = 3)
+
+```
+
+
+# Exploratory Data Analysis (EDA)
+```{r}
+library(ggplot2)
+library(reshape2)
+
+# Correlation Between Features
+
+
+# First, clean the spaces in character columns
+loan_data_clean <- loan_data
+char_cols <- sapply(loan_data, is.character)
+
+for (col in names(loan_data)[char_cols]) {
+  loan_data_clean[[col]] <- trimws(loan_data_clean[[col]])
+}
+
+# Make a copy for correlation
+loan_data_corr <- loan_data_clean
+
+# Encode binary categorical variables
+binary_cats <- c('education', 'self_employed', 'loan_status')
+encoding_map <- list(
+  education = c('Not Graduate' = 0, 'Graduate' = 1),
+  self_employed = c('No' = 0, 'Yes' = 1),
+  loan_status = c('Rejected' = 0, 'Approved' = 1)
+)
+
+# Apply the encoding
+for (col in binary_cats) {
+  loan_data_corr[[col]] <- as.numeric(as.character(encoding_map[[col]][loan_data_corr[[col]]]))
+}
+
+# Create and plot correlation matrix
+library(corrplot)
+# Only include numeric columns
+numeric_cols <- sapply(loan_data_corr, is.numeric)
+corr_matrix <- cor(loan_data_corr[, numeric_cols], use = "complete.obs")
+
+# Plot
+corrplot(corr_matrix, method = "color", type = "upper", 
+         addCoef.col = "black", number.cex = 0.7,
+         tl.col = "black", tl.srt = 45,
+         col = colorRampPalette(c("blue", "white", "red"))(200),
+         title = "Correlation Heatmap")
+```
+
+-The correlation analysis reveals key relationships between financial factors and
+loan approval
+
+-Strong positive correlations exist between loan amount and income, luxury asset
+value and income, as well as bank asset value and income.
+
+-Loan status has a high positive correlation with CIBIL score, indicating that
+credit history significantly impacts loan approval.
+
+-Moderate positive correlations are observed between various asset values
+(residential, commercial, luxury) and loan amount.
+
+-Loan status negatively correlates with bank, residential, and luxury asset values, as well as income and number of dependents.
+
+-Loan approval is not strongly influenced by factors like education or commercial
+asset value.
+
+-Applicants requesting longer loan terms tend to face more rejections, suggesting
+that longer repayment periods decrease approval chances.
+
+
+
+```{r}
+
+#DISTRIBUTION OF THE DATASET EACH FEATURE
+# Load required libraries
+library(ggplot2)
+library(gridExtra)
+
+
+
+
+# Select numeric columns
+numeric_columns <- names(loan_data)[sapply(loan_data, is.numeric)]
+
+# Create empty list to store plots
+plot_list <- list()
+
+# Create histogram with density curve for each numeric column
+for (col in numeric_columns) {
+  p <- ggplot(loan_data, aes_string(x = col)) +
+    geom_histogram(aes(y = after_stat(density)), 
+                   bins = 30, 
+                   fill = "skyblue", 
+                   color = "black", 
+                   alpha = 0.7) +
+    geom_density(color = "red", linewidth = 1) +
+    ggtitle(col) +
+    theme_minimal() +
+    theme(axis.title.x = element_blank())
+  
+  plot_list[[col]] <- p
+}
+
+# Calculate grid dimensions (4x4 layout or whatever fits the number of columns)
+n_plots <- length(plot_list)
+n_rows <- ceiling(sqrt(n_plots))
+n_cols <- ceiling(n_plots / n_rows)
+
+# Arrange plots in a grid and display
+grid.arrange(grobs = plot_list, nrow = 4, ncol = 4)
+
+```
+
+There are more applicants in the dataset they are either renting or living in
+other people space
+  -More applicants  are Approved in the dataset
+  -There are more applicants having 4 no of dependents and less with 0 - 3 and 5
+  -Income annum majority lies b/w 0.4 and 0.6
+  -majority is in loan amount 1.1
+  -there are more applicants with loan term of 6 years
+  -many applicants donot have any commercial asset
+  -majority luxury asset value is 1.5
+  -More applicants have the bank asset value of 0.1
+  -dataset have almost equal educated and uneducated / self - employed and not 
+  self emplyed applicants 
+
+
+```{r}
+# % of Graduate and Ungraduate Applicants in dataset
+
+# Load required libraries
+library(ggplot2)
+
+
+# Count the frequency of each education category
+education_counts <- table(loan_data$education)
+education_df <- as.data.frame(education_counts)
+names(education_df) <- c("education", "count")
+
+# Create the pie chart
+
+ggplot(education_df, aes(x = "", y = count, fill = education)) +
+  geom_bar(stat = "identity", width = 1) +
+  coord_polar("y", start = 0) +
+  # Add percentage labels
+  geom_text(aes(label = paste0(round(count/sum(count)*100, 1), "%")),
+            position = position_stack(vjust = 0.5)) +
+  # Custom colors similar to Plotly T10
+  scale_fill_manual(values = c("#4C78A8", "#F58518")) +
+  # Customize appearance
+  
+  labs(title = "% of Graduate and Ungraduate Applicants in dataset",
+       x = NULL, y = NULL, fill = "Education") +
+  theme_minimal() +
+  theme(axis.text = element_blank(),
+        axis.ticks = element_blank(),
+        panel.grid = element_blank())
+
+```
+
+
+```{r}
+# % of self_employed people and rejection in dataset
+
+# Load necessary library
+library(ggplot2)
+
+# Assuming loan_data is your data frame
+# Summarize the data to get counts for each self_employed status
+self_employed_counts <- aggregate(loan_id ~ self_employed, data = loan_data, FUN = length)
+
+# Calculate the percentage for each self_employed status
+self_employed_counts$percentage <- self_employed_counts$loan_id / sum(self_employed_counts$loan_id) * 100
+
+# Create the pie chart with percentage labels
+ggplot(self_employed_counts, aes(x = "", y = loan_id, fill = self_employed)) +
+  geom_bar(stat = "identity", width = 1) +
+  coord_polar(theta = "y") +
+  labs(title = "% of Self-Employed People and Rejection in Dataset") +
+  theme_void() +
+  scale_fill_manual(values = c("#1f77b4", "#ff7f0e", "#2ca02c", "#d62728", "#9467bd", "#8c564b", "#e377c2", "#7f7f7f", "#bcbd22", "#17becf")) +
+  geom_text(aes(label = paste0(round(percentage, 1), "%")), 
+            position = position_stack(vjust = 0.5))
+
+```
+
+
+
+
+```{r}
+
+# % Approval and Rejection in Dataset
+
+# Load necessary library
+library(ggplot2)
+
+# Assuming loan_data is your data frame
+# Summarize the data to get counts for each loan_status
+loan_status_counts <- aggregate(loan_id ~ loan_status, data = loan_data, FUN = length)
+
+# Calculate the percentage for each loan_status
+loan_status_counts$percentage <- loan_status_counts$loan_id / sum(loan_status_counts$loan_id) * 100
+
+# Create the pie chart with percentage labels
+ggplot(loan_status_counts, aes(x = "", y = loan_id, fill = loan_status)) +
+  geom_bar(stat = "identity", width = 1) +
+  coord_polar(theta = "y") +
+  labs(title = "% of Approval and Rejection in Dataset") +
+  theme_void() +
+  scale_fill_manual(values = c("#1f77b4", "#ff7f0e", "#2ca02c", "#d62728", "#9467bd", "#8c564b", "#e377c2", "#7f7f7f", "#bcbd22", "#17becf")) +
+  geom_text(aes(label = paste0(round(percentage, 1), "%")), 
+            position = position_stack(vjust = 0.5))
+```
+
+
+-sample has slightly more educated Applicants , and slightly more self_employed        Applicants
+-dataset have more Approved loan status then Rejected
+
+
+# Visualizing NUMERIC FEATURES RELATIONSHIP(CORRELATION)
+```{r}
+# Load necessary library
+library(ggplot2)
+
+# Define custom label functions for the axes
+custom_labels <- function(x) sprintf("%.1f", x / 1e7)
+
+# Create the scatter plot
+ggplot(loan_data, aes(x = income_annum, y = loan_amount, color = loan_status)) +
+  geom_point() +
+  labs(
+    x = "Annual Income (in e7)",
+    y = "Loan Amount (in e7)",
+    title = "Loan Amount vs Income by Loan Status"
+  ) +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5)) +
+  scale_color_manual(values = c("blue", "orange", "green", "red", "purple", "brown", "pink", "gray", "yellow", "cyan")) +
+  scale_x_continuous(labels = custom_labels) +
+  scale_y_continuous(labels = custom_labels)
+
+```
+-Applicants with high income tends to take apply for high loan amounts
+
+-Loan Amount vs Bank Balance by Loan Status
+```{r}
+# Load necessary library
+library(ggplot2)
+
+# Scale the data by dividing by 10^7
+loan_data_scaled <- loan_data
+loan_data_scaled$bank_asset_value_scaled <- loan_data_scaled$bank_asset_value / 1e7
+loan_data_scaled$luxury_assets_value_scaled <- loan_data_scaled$luxury_assets_value / 1e7
+
+# Create the scatter plot
+ggplot(loan_data_scaled, aes(x = bank_asset_value_scaled, y = luxury_assets_value_scaled, color = loan_status)) +
+  geom_point() +
+  labs(
+    x = "Bank Balance (in 10^7)",
+    y = "Luxuries (in 10^7)",
+    title = "Loan Amount vs Bank Balance by Loan Status"
+  ) +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5)) +
+  scale_color_manual(values = c("blue", "orange", "green", "red", "purple", "brown", "pink", "gray", "yellow", "cyan")) +
+  scale_x_continuous(labels = custom_labels) +
+  scale_y_continuous(labels = custom_labels)
+
+```
+-Applicants with more balance in their accounts tend to buy high value luxury items 
+
+
+```{r}
+
+# Load necessary libraries
+library(GGally)
+library(ggplot2)
+
+# Scale the data by dividing by 10^7
+loan_data_scaled$income_annum_scaled <- loan_data_scaled$income_annum / 1e7
+loan_data_scaled$loan_amount_scaled <- loan_data_scaled$loan_amount / 1e7
+loan_data_scaled$cibil_score_scaled <- loan_data_scaled$cibil_score / 1e7
+
+# Create the pair plot
+ggpairs(
+  loan_data_scaled, 
+  columns = c('income_annum_scaled', 'loan_amount_scaled', 'cibil_score_scaled'), 
+  aes(color = loan_status),
+  columnLabels = c('Income (in 10^7)', 'Loan Amount (in 10^7)', 'CIBIL Score (in 10^7)')
+) +
+  theme_minimal()
+```
+-No relation between cibil score and income annum and loan amount
+
+
+```{r}
+# ANALYZING THE FEATURE HAVING THE HIGH CHANCE OF LOAN APPROVAL
+# Load necessary libraries
+library(ggplot2)
+library(gridExtra)
+
+# Select numeric columns
+numeric_columns <- sapply(loan_data, is.numeric)
+numeric_data <- loan_data[, numeric_columns]
+
+# Scale the numeric data by dividing by 10^7
+scaled_data <- as.data.frame(lapply(numeric_data, function(x) x / 1e7))
+
+# Add the loan_status column back to the scaled data
+scaled_data$loan_status <- loan_data$loan_status
+
+# Create a list to store the plots
+plots <- list()
+
+# Create histograms for each numeric column
+for (column in names(scaled_data)[-ncol(scaled_data)]) {
+  p <- ggplot(scaled_data, aes_string(x = column, fill = "loan_status")) +
+    geom_histogram(bins = 30, alpha = 0.7, position = "identity") +
+    geom_density(alpha = 0.3) +
+    labs(title = column, x = paste(column, "(in 10^7)"), y = "Frequency") +
+    theme_minimal()
+  plots[[column]] <- p
+}
+
+# Arrange the plots in a grid
+grid.arrange(grobs = plots, ncol = 4)
+```
+
+- As the cibil_score increases the Approval of loan status has been seen 
+- INDICATING applicants having a good credit history and loan replayment tends to have higher chances of loan approval
+
+
+
+# MODELLING
+
+```{r}
+
+# Feature Selection
+
+# Load necessary libraries
+library(dplyr)
+
+# Drop unnecessary columns
+# Drop 'loan_id' column - Not needed for analysis
+loan_data <- loan_data %>% select(-loan_id)
+
+```
+
+
+#Checking Class Imbalance
+```{r}
+# Class distribution
+# ggplot(loan_data, aes(x=factor(loan_status), fill=factor(loan_status))) + 
+#   geom_bar(alpha=0.7) + 
+#   theme_minimal() +
+#   ggtitle("Loan Approval Distribution") +
+#   scale_fill_manual(values = c("red", "green"), labels = c("Rejected", "Approved")) +
+#   labs(x = "Loan Status", fill = "Status")
+
+```
+#KNN can be affected by imbalance because it tends to favor the majority class.
+#This means the model might predict 0 (Rejected) too often, leading to #poor recall for 1 (Approved).
+
+```{r}
+# library(themis)
+# library(recipes)
+# 
+# # Apply SMOTE using recipes (tidymodels framework)
+# loan_data$education <- as.integer(factor(loan_data$education))
+# loan_data$self_employed <- as.integer(factor(loan_data$self_employed))
+# 
+# # Now apply SMOTE
+# rec <- recipe(loan_status ~ ., data = loan_data) %>%
+#   step_smote(loan_status, over_ratio = 1) %>%
+#   prep() %>%
+#   bake(new_data = NULL)
+# 
+# table(rec$loan_status)
+# 
+# loan_data <- rec
+
+```
+
+
+
+#Verify Balance
+```{r}
+# ggplot(loan_data, aes(x = factor(loan_status), fill = factor(loan_status))) +
+#   geom_bar(alpha = 0.7) +
+#   theme_minimal() +
+#   ggtitle("Loan Approval Distribution After SMOTE") +
+#   scale_fill_manual(values = c("red", "green"), labels = c("Rejected", "Approved")) +
+#   labs(x = "Loan Status", fill = "Status")
+
+
+```
+
+
+
+```{r}
+#Convert Categorical Variables - Since KNN works best with numerical data, convert categorical variables into factors.
+
+loan_data$education <- as.factor(loan_data$education)
+
+loan_data$self_employed <- as.factor(loan_data$self_employed)
+
+```
+
+
+```{r}
+
+#Normalize Numerical Features
+
+#Formula
+normalize <- function(x) {
+  return((x - min(x)) / (max(x) - min(x)))
+}
+
+# Normalize relevant numerical columns
+loan_data[, c("no_of_dependents", "income_annum", "loan_amount", "loan_term", 
+              "cibil_score", "residential_assets_value", "commercial_assets_value", "luxury_assets_value", "bank_asset_value")] <- 
+  apply(loan_data[, c("no_of_dependents", "income_annum", "loan_amount", "loan_term", 
+                      "cibil_score", "residential_assets_value", "commercial_assets_value", "luxury_assets_value", "bank_asset_value")], 
+        2, normalize)
+
+#Show first rows
+head(loan_data)
+```
+
+#Training the KNN Model
+#Split Data into Training & Testing Sets
+#Using Hold Out Estimation
+```{r}
+# Load required library
+library(caTools)
+
+set.seed(64)
+
+# Split the data (80% train, 20% test)
+split <- sample.split(loan_data$loan_status, SplitRatio = 0.8)
+train_data <- subset(loan_data, split == TRUE)
+test_data <- subset(loan_data, split == FALSE)
+
+# Check split result
+table(train_data$loan_status)
+table(test_data$loan_status)
+
+``` 
+
+
+```{r}
+#Prepare Data for KNN
+#Remove categorical variables and separate labels (target variable):
+
+# Load KNN library
+library(class)
+
+# Remove categorical columns for KNN (excluding target variable)
+train_features <- train_data[, sapply(train_data, is.numeric)]
+test_features <- test_data[, sapply(test_data, is.numeric)]
+
+# Extract target labels
+train_labels <- train_data$loan_status
+test_labels <- test_data$loan_status
+
+table(train_labels)
+table(test_labels)
+
+```
+
+
+```{r}
+
+#Check best K value
+
+# Load necessary libraries
+library(class)    # For KNN
+library(caret)    # For confusion matrix
+
+# Define a sequence of k values to test
+k_values <- 1:20
+
+# Initialize vector to store accuracy values
+accuracy_scores <- numeric(length(k_values))
+
+# Loop through k values
+for (i in k_values) {
+  # Train KNN model
+  knn_pred <- knn(train = train_features, test = test_features, cl = train_labels, k = i)
+  
+  # Compute accuracy
+  conf_matrix <- confusionMatrix(factor(knn_pred, levels = unique(train_labels)), 
+                                 factor(test_labels, levels = unique(train_labels)))
+  accuracy_scores[i] <- conf_matrix$overall["Accuracy"]
+}
+
+# Find the best k value
+best_k <- k_values[which.max(accuracy_scores)]
+cat("Best k:", best_k, "with Accuracy:", max(accuracy_scores), "\n")
+
+# Plot Accuracy vs. k
+plot(k_values, accuracy_scores, type = "o", col = "blue", pch = 16, xlab = "K Value", ylab = "Accuracy",
+     main = "KNN Accuracy vs. K Value")
+grid()
+
+
+```
+
+
+#Train KNN Model
+```{r}
+# Load necessary libraries
+library(class)  # For KNN
+library(caret)  # For confusionMatrix
+library(e1071)  # Required for confusionMatrix
+
+# Set seed for reproducibility
+set.seed(65)
+
+# Define a function to compute Euclidean distance
+euclidean_distance <- function(x1, x2) {
+  sqrt(sum((x1 - x2)^2))
+}
+
+# Standardize the features to ensure fair distance computation
+train_features_scaled <- scale(train_features)
+test_features_scaled <- scale(test_features)
+
+# Define K value
+k_value <- 13
+
+# Train KNN model with Euclidean distance
+#Since knn() in the class package already defaults to Euclidean distance, this ensures that all feature values are standardized before applying KNN, which is important when using distance-based algorithms.
+
+knn_pred <- knn(train = train_features_scaled, 
+                test = test_features_scaled, 
+                cl = train_labels, 
+                k = k_value)
+
+# Convert test labels and predictions to factors with the same levels
+test_labels <- factor(test_labels, levels = unique(train_labels))
+knn_pred <- factor(knn_pred, levels = unique(train_labels))
+
+# Create confusion matrix
+conf_matrix <- confusionMatrix(knn_pred, test_labels)
+
+# Print full confusion matrix
+print(conf_matrix)
+
+# Extract Accuracy
+accuracy <- conf_matrix$overall["Accuracy"]
+print(paste("Accuracy:", round(accuracy, 4)))
+
+# Extract Precision, Recall, and F1-score
+precision <- conf_matrix$byClass["Precision"]
+recall <- conf_matrix$byClass["Recall"]
+f1_score <- conf_matrix$byClass["F1"]
+
+print(paste("Precision:", round(precision, 4)))
+print(paste("Recall:", round(recall, 4)))
+print(paste("F1 Score:", round(f1_score, 4)))
+```
+# Detailed Model Performance Insights:
+  -Accuracy: 0.9087 - The model correctly predicts loan approval status for
+  90.87% of cases.
+  
+  -Precision: 0.9298 - When the model predicts loan approval, it's correct 
+  92.98% of the time.
+  
+  -Recall: 0.9228 - The model correctly identifies 92.28% of all actual 
+  approved loans.
+  
+  -F1-score: 0.9263 - Indicates a good balance between precision and recall.
+  
+  -Kappa: 0.8063 - Indicates a very good agreement.
+
+# CONCLUSION
+The K-Nearest Neighbors (KNN) model developed for loan approval prediction
+demonstrates strong performance and reliability:
+
+  1. High Accuracy: With an accuracy of 90.87%, the model shows excellent
+  overall predictive capability.
+
+  2. Balanced Performance: High precision (92.98%) and recall (92.28%) indicate
+  the model's effectiveness in both approving worthy candidates and identifying
+  potential defaults.
+        
+  3. Robust Discrimination: A Balanced Accuracy of 0.9041 suggests the model's
+  strong         ability to distinguish between approved and rejected loan
+  applications.
+
+  4. Key Factors: The analysis highlighted CIBIL score, income, and loan amount
+  as crucial factors in loan approval decisions.
+        
+  5. Practical Applicability: The model's performance suggests it could be a
+  valuable tool in assisting loan approval decisions in real-world scenarios.

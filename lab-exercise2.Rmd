@@ -1,0 +1,252 @@
+---
+title: "lab2"
+author: "Shaibu Abdullateef Topa"
+date: "2025-02-05"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+#Load Packages
+```{r}
+library(caret)
+library(datasets)
+library(partykit)
+library(e1071)
+library(C50)
+library(RWeka)
+library(rattle)
+```
+#Show datasets
+```{r}
+library(help="datasets")
+```
+
+#Show partykit
+```{r}
+library(help="datasets")
+```
+
+
+#Show data WeatherPlay
+```{r}
+weatherData <- WeatherPlay
+view(weatherData)
+```
+
+#Dimension of Weather data
+```{r}
+dim(weatherData)
+```
+#Attributes of Weather data
+```{r}
+attributes(weatherData)
+```
+#Number of instances of Weather data
+```{r}
+nrow(weatherData)
+```
+#Tell R you will be using the Weather dataset by typing
+```{r}
+WeatherPlay
+```
+
+
+#Algorithm J48 to Train
+```{r}
+set.seed(1)
+j48Tree <- train(
+  play ~ .,
+  data = WeatherPlay,
+  method = "J48",
+  trControl = trainControl(method = "cv", number = 5)
+)
+```
+
+
+#Show result
+```{r}
+summary(j48Tree$finalModel)
+```
+#Plot result
+```{r}
+plot(j48Tree$finalModel)
+```
+
+#Exercises 1 - 1 Using C5 Algorithm
+```{r}
+set.seed(1)
+c5Tree <- train(
+  play ~.,
+  data = WeatherPlay,
+  method = "C5.0Tree",
+  trControl = trainControl( method = "cv", number = 5)
+)
+
+summary(c5Tree)
+
+c5Treee <- C5.0(play ~., data = WeatherPlay)
+plot(c5Treee)
+```
+
+
+
+#Using C5.0Rules
+```{r}
+set.seed(1)
+c5Rules <- train(
+  play ~.,
+  data = WeatherPlay,
+  method = "C5.0Rules",
+  trControl = trainControl( method = "cv", number = 5)
+)
+
+summary(c5Rules$finalModel)
+```
+
+
+```{r}
+data(segmentationData)
+dim(segmentationData)
+```
+
+
+```{r}
+view(segmentationData)
+```
+
+#Remove attribute cell as it is not useful
+```{r}
+segmentationData$Cell <- NULL
+```
+
+# Split into training and testing datasets
+```{r}
+STrain <- subset(segmentationData, Case == "Train")
+STest  <- subset(segmentationData, Case == "Test")
+```
+
+#remove Case attribute from both dataset 
+```{r}
+STrain$Case <- NULL
+STest$Case  <- NULL
+```
+
+#Build a model using the train set
+```{r}
+set.seed(1)
+STree <- train(
+  Class ~ .,
+  data = STrain,
+  method = "J48",
+  trControl = trainControl(method = "cv", number = 5)
+)
+
+summary(STree$finalModel)
+plot(STree$finalModel)
+```
+
+
+
+
+
+#To test the model use the predict function. 
+```{r}
+TestRes <- predict(STree, newdata = STest, type="raw")
+confusionMatrix(TestRes, STest$Class)
+```
+#Apply J48, C5.0Trees and C5.0Rules to ContactLenses 
+```{r}
+contactLens <- read.csv("ContactLens.csv")
+
+set.seed(1)
+
+LensJ48 <- train(
+  ContactLens ~ .,
+  data = contactLens,
+  method = "J48",
+  trControl = trainControl(method = "cv", 5)
+)
+
+summary(LensJ48$finalModel)
+plot(LensJ48$finalModel)
+```
+#Apply J48, C5.0Trees and C5.0Rules to ContactLenses 
+```{r}
+contactLens <- read.csv("ContactLens.csv")
+
+set.seed(1)
+
+LensC5Trees <- train(
+  ContactLens ~ .,
+  data = contactLens,
+  method = "C5.0Tree",
+  trControl = trainControl(method = "cv", 5)
+)
+
+summary(LensC5Trees$finalModel)
+
+```
+#Apply J48, C5.0Trees and C5.0Rules to ContactLenses 
+```{r}
+contactLens <- read.csv("ContactLens.csv")
+
+set.seed(1)
+
+LensC5Rules <- train(
+  ContactLens ~ .,
+  data = contactLens,
+  method = "C5.0Rules",
+  trControl = trainControl(method = "cv", 5)
+)
+
+summary(LensC5Rules$finalModel)
+```
+```{r}
+diabetes <- read.csv("diabetes.csv")
+
+set.seed(1)
+
+rPart <- train(
+  Outcome ~ .,
+  data = diabetes,
+  method = "rpart",
+  trControl = trainControl(method = "cv", 5)
+)
+
+summary(rPart$finalModel)
+fancyRpartPlot(rPart$finalModel)
+```
+#Download file heart-c.arff from CampusMoodle.
+#The class is num.
+#Attempt to apply J48 to this dataset.
+
+```{r}
+heart <- read.arff("heart.c.arff")
+set.seed(1)
+# heartJ48 <- train(
+#   num ~ .,
+#   data = heart,
+#   method = "J48",
+#   trControl = trainControl(method = "cv", 5)
+# )
+
+# summary(heartJ48$finalModel)
+# The above fails (ERROR: na.fail.default) bcoz the dataset contains missing values
+
+noNAHeart <- na.omit(heart)
+
+noNAHeart$num <- droplevels(noNAHeart$num)
+
+heartJ48 <- train(
+  num ~ .,
+  data = noNAHeart,
+  method = "J48",
+  trControl = trainControl(method = "cv", number = 5)
+)
+
+summary(heartJ48$finalModel)
+plot(heartJ48$finalModel)
+```
